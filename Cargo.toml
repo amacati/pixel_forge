@@ -1,12 +1,39 @@
 [package]
-name = "pixel_forge"
+name = "pixel_forge_rs"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
-name = "pixel_forge"
+name = "pixel_forge_rs"
 crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = "0.20.0"
+# Windows API
+windows = { version = "0.54.0", features = [
+    "Win32_System_WinRT_Graphics_Capture",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Foundation",
+    "Graphics_Capture",
+    "Win32_System_WinRT_Direct3D11",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Gdi",
+    "System",
+    "Graphics_DirectX_Direct3D11",
+    "Foundation_Metadata",
+    "Win32_Devices_Display",
+    "Storage",
+    "Graphics_Imaging",
+    "Storage_Streams",
+    "Foundation",
+    "Media_MediaProperties",
+    "Media_Core",
+    "Media_Transcoding",
+] }
+
+# Error handling
+thiserror = "1.0.58"

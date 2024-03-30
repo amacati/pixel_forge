@@ -12,6 +12,10 @@ classifiers = [
 ]
 dynamic = ["version"]
 
+[tool.pyright]
+extension-pkg-allow-list = "pixel_forge_rs"
+
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
 
