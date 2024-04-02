@@ -91,7 +91,7 @@ impl Window {
     /// # Returns
     ///
     /// `true` if the window is valid, `false` otherwise.
-    #[must_use]
+    #[getter]
     pub fn valid(&self) -> bool {
         if !unsafe { IsWindowVisible(self.window_handle).as_bool() } {
             return false;
@@ -123,6 +123,7 @@ impl Window {
     }
 
     /// Get the title of the window.
+    #[getter]
     pub fn title(&self) -> Result<String, WindowError> {
         let len = unsafe { GetWindowTextLengthW(self.window_handle) };
 
@@ -168,7 +169,7 @@ impl Window {
         if monitor.is_invalid() {
             None
         } else {
-            Some(Monitor::from_raw_hmonitor(monitor))
+            Some(Monitor::from_handle(monitor))
         }
     }
 

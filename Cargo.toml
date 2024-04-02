@@ -35,5 +35,14 @@ windows = { version = "0.54.0", features = [
     "Media_Transcoding",
 ] }
 
+# Mutex acceleration
+parking_lot = "0.12.1"
+
+# Development
+rand = "0.8"
+
+# Transfer vectors to Python as numpy arrays without list overhead
+numpy = "0.20"
+
 # Error handling
 thiserror = "1.0.58"
