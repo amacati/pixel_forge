@@ -1,21 +1,21 @@
 // This code has been adapted from https://github.com/NiiightmareXD/windows-capture
 
-use std::{mem, num::ParseIntError, string::FromUtf16Error};
+use std::mem;
+use std::num::ParseIntError;
+use std::string::FromUtf16Error;
 
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
-use windows::{
-    core::{HSTRING, PCWSTR},
-    Graphics::Capture::GraphicsCaptureItem,
-    Win32::{
-        Foundation::{BOOL, LPARAM, POINT, RECT, TRUE},
-        Graphics::Gdi::{
-            EnumDisplayDevicesW, EnumDisplayMonitors, EnumDisplaySettingsW, GetMonitorInfoW,
-            MonitorFromPoint, DEVMODEW, DISPLAY_DEVICEW, ENUM_CURRENT_SETTINGS, HDC, HMONITOR,
-            MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONULL,
-        },
-        System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop,
-    },
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::prelude::*;
+
+use windows::core::{HSTRING, PCWSTR};
+use windows::Graphics::Capture::GraphicsCaptureItem;
+use windows::Win32::Foundation::{BOOL, LPARAM, POINT, RECT, TRUE};
+use windows::Win32::Graphics::Gdi::{
+    EnumDisplayDevicesW, EnumDisplayMonitors, EnumDisplaySettingsW, GetMonitorInfoW,
+    MonitorFromPoint, DEVMODEW, DISPLAY_DEVICEW, ENUM_CURRENT_SETTINGS, HDC, HMONITOR, MONITORINFO,
+    MONITORINFOEXW, MONITOR_DEFAULTTONULL,
 };
+use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
 
 #[derive(thiserror::Error, Debug)]
 pub enum MonitorError {
@@ -65,6 +65,11 @@ pub struct Monitor {
 
 #[pymethods]
 impl Monitor {
+    #[new]
+    pub fn new() -> Self {
+        primary_monitor().unwrap()
+    }
+
     /// Return the pixel width of the monitor.
     #[getter]
     pub fn width(&self) -> Result<u32, MonitorError> {

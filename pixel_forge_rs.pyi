@@ -94,13 +94,10 @@ class Capture:
         arrived yet, the ``materialize_frame`` method will return an empty array.
     """
 
-    def __init__(self):
-        """Create a new capture object."""
-
-    def start_capture_thread(self):
+    def start(self):
         """Start the capture thread."""
 
-    def stop_capture_thread(self):
+    def stop(self):
         """Stop the capture thread."""
 
     def materialize_frame(self) -> np.ndarray:

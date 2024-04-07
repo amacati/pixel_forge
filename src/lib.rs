@@ -2,6 +2,8 @@ use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
 pub mod capture;
+mod direct_x;
+pub mod directx_capture;
 pub mod monitor;
 pub mod window;
 

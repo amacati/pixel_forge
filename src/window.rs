@@ -1,23 +1,21 @@
 // This code has been adapted from https://github.com/NiiightmareXD/windows-capture
 
-use std::{ptr, string::FromUtf16Error};
+use std::ptr;
+use std::string::FromUtf16Error;
 
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
-use windows::{
-    core::HSTRING,
-    Graphics::Capture::GraphicsCaptureItem,
-    Win32::{
-        Foundation::{BOOL, HWND, LPARAM, RECT, TRUE},
-        Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONULL},
-        System::{
-            Threading::GetCurrentProcessId, WinRT::Graphics::Capture::IGraphicsCaptureItemInterop,
-        },
-        UI::WindowsAndMessaging::{
-            EnumChildWindows, FindWindowW, GetClientRect, GetDesktopWindow, GetForegroundWindow,
-            GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
-            IsWindowVisible, GWL_EXSTYLE, GWL_STYLE, WS_CHILD, WS_EX_TOOLWINDOW,
-        },
-    },
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::prelude::*;
+
+use windows::core::HSTRING;
+use windows::Graphics::Capture::GraphicsCaptureItem;
+use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE};
+use windows::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONULL};
+use windows::Win32::System::Threading::GetCurrentProcessId;
+use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumChildWindows, FindWindowW, GetClientRect, GetDesktopWindow, GetForegroundWindow,
+    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+    IsWindowVisible, GWL_EXSTYLE, GWL_STYLE, WS_CHILD, WS_EX_TOOLWINDOW,
 };
 
 use crate::monitor::Monitor;

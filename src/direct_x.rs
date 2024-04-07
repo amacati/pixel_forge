@@ -1,24 +1,18 @@
 // This code has been adapted from https://github.com/NiiightmareXD/windows-capture
 
-use windows::{
-    core::Interface,
-    Graphics::DirectX::Direct3D11::IDirect3DDevice,
-    Win32::{
-        Graphics::{
-            Direct3D::{
-                D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_10_0,
-                D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
-                D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_9_2, D3D_FEATURE_LEVEL_9_3,
-            },
-            Direct3D11::{
-                D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext,
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION,
-            },
-            Dxgi::IDXGIDevice,
-        },
-        System::WinRT::Direct3D11::CreateDirect3D11DeviceFromDXGIDevice,
-    },
+use windows::core::Interface;
+use windows::Graphics::DirectX::Direct3D11::IDirect3DDevice;
+use windows::System::WinRT::Direct3D11::CreateDirect3D11DeviceFromDXGIDevice;
+use windows::Win32::Graphics::Direct3D::{
+    D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1,
+    D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_9_2,
+    D3D_FEATURE_LEVEL_9_3,
 };
+use windows::Win32::Graphics::Direct3D11::{
+    D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+    D3D11_SDK_VERSION,
+};
+use windows::Win32::Graphics::Dxgi::IDXGIDevice;
 
 #[derive(thiserror::Error, Eq, PartialEq, Clone, Debug)]
 pub enum DirectXError {
