@@ -35,6 +35,8 @@ windows = { version = "0.54.0", features = [
     "Media_Transcoding",
 ] }
 
+windows-result = "0.1.1"
+
 # Mutex acceleration
 parking_lot = "0.12.1"
 

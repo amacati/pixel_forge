@@ -1,8 +1,10 @@
 // This code has been adapted from https://github.com/NiiightmareXD/windows-capture
 
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::prelude::*;
+
 use windows::core::Interface;
 use windows::Graphics::DirectX::Direct3D11::IDirect3DDevice;
-use windows::System::WinRT::Direct3D11::CreateDirect3D11DeviceFromDXGIDevice;
 use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1,
     D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_9_2,
@@ -13,6 +15,7 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_SDK_VERSION,
 };
 use windows::Win32::Graphics::Dxgi::IDXGIDevice;
+use windows::Win32::System::WinRT::Direct3D11::CreateDirect3D11DeviceFromDXGIDevice;
 
 #[derive(thiserror::Error, Eq, PartialEq, Clone, Debug)]
 pub enum DirectXError {
@@ -21,6 +24,33 @@ pub enum DirectXError {
     #[error("Windows API Error: {0}")]
     WindowsError(#[from] windows::core::Error),
 }
+
+impl From<DirectXError> for PyErr {
+    fn from(error: DirectXError) -> PyErr {
+        PyRuntimeError::new_err(error.to_string())
+    }
+}
+
+/// Used To Send DirectX Device Across Threads
+pub struct SendDirectX<T>(pub T);
+
+impl<T> SendDirectX<T> {
+    /// Create A New `SendDirectX` Instance
+    ///
+    /// # Arguments
+    ///
+    /// * `device` - The DirectX Device
+    ///
+    /// # Returns
+    ///
+    /// Returns A New `SendDirectX` Instance
+    pub const fn new(device: T) -> Self {
+        Self(device)
+    }
+}
+
+#[allow(clippy::non_send_fields_in_send_ty)]
+unsafe impl<T> Send for SendDirectX<T> {}
 
 /// Create `ID3D11Device` and `ID3D11DeviceContext`
 pub fn create_d3d_device() -> Result<(ID3D11Device, ID3D11DeviceContext), DirectXError> {
@@ -56,7 +86,7 @@ pub fn create_d3d_device() -> Result<(ID3D11Device, ID3D11DeviceContext), Direct
     };
 
     if feature_level != D3D_FEATURE_LEVEL_11_1 {
-        return Err(Error::FeatureLevelNotSatisfied);
+        return Err(DirectXError::FeatureLevelNotSatisfied);
     }
 
     Ok((d3d_device.unwrap(), d3d_device_context.unwrap()))
