@@ -6,7 +6,7 @@ pub enum FrameError {
     FrameConversionFailed,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Frame {}
 
 impl Frame {
@@ -19,7 +19,7 @@ impl TryFrom<Frame> for Vec<u8> {
     type Error = FrameError;
 
     fn try_from(value: Frame) -> Result<Vec<u8>, Self::Error> {
-        Ok(vec![0; 0])
+        Ok(vec![0, 0])
     }
 }
 
@@ -27,6 +27,6 @@ impl TryFrom<&Frame> for Vec<u8> {
     type Error = FrameError;
 
     fn try_from(value: &Frame) -> Result<Vec<u8>, Self::Error> {
-        Ok(vec![0; 0])
+        Ok(vec![0, 0])
     }
 }

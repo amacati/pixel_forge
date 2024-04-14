@@ -39,6 +39,7 @@ windows-result = "0.1.1"
 
 # Mutex acceleration
 parking_lot = "0.12.1"
+ctrlc = "3.4.4"
 
 # Development
 rand = "0.8"

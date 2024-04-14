@@ -115,3 +115,7 @@ class Capture:
         Raises:
             RuntimeError: If the capture thread has not yet picked up a frame.
         """
+
+    @property
+    def active(self) -> bool:
+        """Check if the capture thread is active."""

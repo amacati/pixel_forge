@@ -1,7 +1,7 @@
 // This code has been adapted from https://github.com/NiiightmareXD/windows-capture
 
 use std::mem;
-use std::sync::atomic::{self, AtomicBool};
+use std::sync::atomic::{self, AtomicBool, AtomicI64};
 use std::sync::Arc;
 use std::thread::{self, sleep, JoinHandle};
 use std::time::Duration;
@@ -33,9 +33,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows_result::Error as WindowsError;
 
+use ctrlc;
 use numpy::PyArray1;
 use parking_lot::Mutex;
-
 use rand::{thread_rng, Rng};
 
 use crate::capture_utils::{CaptureTarget, ColorFormat};
@@ -68,21 +68,16 @@ impl From<CaptureError> for PyErr {
 pub struct Capture {
     stop_thread: Arc<AtomicBool>,
     capture_close: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>,
-    frame: Arc<Mutex<Option<Vec<u8>>>>,
-    frame2: Arc<Mutex<Option<Frame>>>,
+    thread: Option<JoinHandle<Result<(), CaptureError>>>,
+    frame: Arc<Mutex<Option<Frame>>>,
+    frame_cnt: Arc<AtomicI64>,
 }
 
 impl Capture {
     pub fn materialize_frame(&self) -> Result<Vec<u8>, CaptureError> {
-        self.frame
-            .lock()
-            .clone()
-            .ok_or(CaptureError::NoFrameAvailable)
-    }
-
-    pub fn materialize_frame2(&self) -> Result<Vec<u8>, CaptureError> {
-        let lock_guard = self.frame2.lock();
+        // Keep the lock_guard in scope to ensure the lock is still valid when we convert it to a
+        // Vec<u8>
+        let lock_guard = self.frame.lock();
         let frame_ref = lock_guard.as_ref().ok_or(CaptureError::NoFrameAvailable)?;
         Ok(Vec::<u8>::try_from(frame_ref)?)
     }
@@ -94,42 +89,21 @@ impl Capture {
     pub fn new() -> Self {
         let stop_thread = Arc::new(AtomicBool::new(false));
         let capture_close = Arc::new(AtomicBool::new(false));
-        let frame = Arc::new(Mutex::new(None));
+
+        let stop_flag = stop_thread.clone();
+        ctrlc::set_handler(move || stop_flag.store(true, atomic::Ordering::Relaxed))
+            .expect("Error setting Ctrl-C handler.");
 
         Self {
             stop_thread,
             capture_close,
             thread: None,
-            frame,
-            frame2: Arc::new(Mutex::new(None)),
+            frame: Arc::new(Mutex::new(None)),
+            frame_cnt: Arc::new(AtomicI64::new(0)),
         }
     }
 
-    pub fn start(&mut self, capture_target: CaptureTarget, await_first_frame: Option<bool>) {
-        let gc_item: GraphicsCaptureItem = capture_target
-            .try_into()
-            .expect("Failed to convert CaptureTarget to GraphicsCaptureItem");
-        let stop_thread = self.stop_thread.clone();
-        let frame = self.frame.clone();
-
-        self.thread = Some(thread::spawn(move || {
-            let size = 10; // Size of the array
-            let mut rng = thread_rng(); // Get a random number generator
-
-            while !stop_thread.load(atomic::Ordering::Relaxed) {
-                sleep(Duration::from_millis(100)); // Simulate work
-                (*frame.lock()) = Some((0..size).map(|_| rng.gen()).collect());
-            }
-        }));
-
-        if await_first_frame.unwrap_or(false) {
-            while self.frame.lock().is_none() {
-                sleep(Duration::from_millis(10));
-            }
-        }
-    }
-
-    pub fn start2(
+    pub fn start(
         &mut self,
         capture_target: CaptureTarget,
         await_first_frame: Option<bool>,
@@ -138,6 +112,13 @@ impl Capture {
             .try_into()
             .expect("Failed to convert CaptureTarget to GraphicsCaptureItem");
 
+        // Clone Arc capture struct members to use them in thread without borrowing
+        let stop_thread = self.stop_thread.clone();
+        let capture_close = self.capture_close.clone();
+        let frame = self.frame.clone();
+        let frame_cnt = self.frame_cnt.clone();
+
+        // Create a thread to run the capture
         let capture_thread = thread::spawn(move || -> Result<(), CaptureError> {
             // Initialize Windows Runtime
             unsafe {
@@ -152,122 +133,161 @@ impl Capture {
             let controller = unsafe { CreateDispatcherQueueController(options)? };
             let thread_id = unsafe { GetCurrentThreadId() };
 
+            // Start capture here
+            // Create DirectX devices
+            let (d3d_device, d3d_device_context) = create_d3d_device()?;
+            let direct3d_device = create_direct3d_device(&d3d_device)?;
+            // Create frame pool
+            let pixel_format = DirectXPixelFormat(ColorFormat::default() as i32);
+            let frame_pool = Direct3D11CaptureFramePool::Create(
+                &direct3d_device,
+                pixel_format,
+                1,
+                gc_item.Size()?,
+            )?;
+            let frame_pool = Arc::new(frame_pool);
+            // Create capture session
+            let session = frame_pool.CreateCaptureSession(&gc_item)?;
+
+            // Set capture session closed event
+            // We need to create a clone of stop_thread to use it in the closure as we still need to
+            // use the original stop_thread in the frame_arrived event
+            let _stop_thread = stop_thread.clone();
+            let capture_closed_event_token = gc_item.Closed(&TypedEventHandler::<
+                GraphicsCaptureItem,
+                IInspectable,
+            >::new({
+                move |_, _| {
+                    _stop_thread.store(true, atomic::Ordering::Relaxed);
+                    capture_close.store(true, atomic::Ordering::Relaxed);
+                    // Stop the message loop
+                    unsafe {
+                        PostThreadMessageW(
+                            thread_id,
+                            WM_QUIT,
+                            WPARAM::default(),
+                            LPARAM::default(),
+                        )?;
+                    };
+                    Result::Ok(())
+                }
+            }))?;
+
+            // Set frame pool frame arrived event
+            let frame_arrived_event_token = frame_pool.FrameArrived(&TypedEventHandler::<
+                Direct3D11CaptureFramePool,
+                IInspectable,
+            >::new({
+                // Init
+                let frame_pool = frame_pool.clone();
+                let d3d_device = d3d_device.clone();
+                let context = d3d_device_context.clone();
+                let capture_frame = frame.clone();
+                // Clone stop_thread flag again to use it in another closure
+                let _stop_thread = stop_thread.clone();
+
+                let mut last_size = gc_item.Size()?;
+                let direct3d_device_recreate = SendDirectX::new(direct3d_device.clone());
+
+                move |frame, _| {
+                    // Return immediately if the thread is stopped
+                    if _stop_thread.load(atomic::Ordering::Relaxed) {
+                        return Ok(());
+                    }
+                    // Get frame
+                    let frame = frame
+                        .as_ref()
+                        .expect("FrameArrived parameter unexpectedly returned None.")
+                        .TryGetNextFrame()?;
+                    // Get frame time, content size and surface
+                    let timespan = frame.SystemRelativeTime()?;
+                    let frame_content_size = frame.ContentSize()?;
+                    let frame_surface = frame.Surface()?;
+                    // Convert surface to texture
+                    let frame_dxgi_interface =
+                        frame_surface.cast::<IDirect3DDxgiInterfaceAccess>()?;
+                    let frame_texture =
+                        unsafe { frame_dxgi_interface.GetInterface::<ID3D11Texture2D>()? };
+
+                    // Get texture settings
+                    let mut desc = D3D11_TEXTURE2D_DESC::default();
+                    unsafe { frame_texture.GetDesc(&mut desc) }
+
+                    // Check if the size has been changed, and recreate the frame pool if necessary
+                    if frame_content_size.Width != last_size.Width
+                        || frame_content_size.Height != last_size.Height
+                    {
+                        let direct3d_device_recreate = &direct3d_device_recreate;
+                        frame_pool.Recreate(
+                            &direct3d_device_recreate.0,
+                            pixel_format,
+                            1,
+                            frame_content_size,
+                        )?;
+                        last_size = frame_content_size;
+                        return Ok(());
+                    }
+                    // Set width & height
+                    let texture_width = desc.Width;
+                    let texture_height = desc.Height;
+
+                    // Create a frame
+                    *capture_frame.lock() = Some(Frame::new());
+                    Result::Ok(())
+                }
+            }))?;
+            session.StartCapture()?;
+
+            // Create message loops. Pump messages while the message is not WM_QUIT and the
+            // stop_thread flag is not set
+            let mut msg = MSG::default();
+            unsafe {
+                while GetMessageW(&mut msg, None, 0, 0).as_bool()
+                    & !stop_thread.load(atomic::Ordering::Relaxed)
+                {
+                    TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                    frame_cnt.fetch_add(1, atomic::Ordering::Relaxed);
+                }
+            }
+            // Shutdown dispatcher queue
+            let async_shutdown = controller.ShutdownQueueAsync()?;
+            async_shutdown.SetCompleted(&AsyncActionCompletedHandler::new(
+                move |_, _| -> Result<(), windows::core::Error> {
+                    unsafe { PostQuitMessage(0) };
+                    Ok(())
+                },
+            ))?;
+
+            // Stop capture
+            frame_pool
+                .RemoveFrameArrived(frame_arrived_event_token)
+                .expect("Failed to remove Frame Arrived event handler");
+            frame_pool.Close().expect("Failed to Close Frame Pool");
+            session.Close().expect("Failed to Close Capture Session");
+            gc_item
+                .RemoveClosed(capture_closed_event_token)
+                .expect("Failed to remove Capture Session Closed event handler");
+
+            // Uninitialize WinRT
+            unsafe { RoUninitialize() };
             Ok(())
         });
+        self.thread = Some(capture_thread);
 
-        let stop_thread = self.stop_thread.clone();
-        let capture_close = self.capture_close.clone();
-        let frame = self.frame.clone();
-
-        // Create DirectX devices
-        let (d3d_device, d3d_device_context) = create_d3d_device()?;
-        let direct3d_device = create_direct3d_device(&d3d_device)?;
-
-        // Create frame pool
-        let pixel_format = DirectXPixelFormat(ColorFormat::default() as i32);
-        let frame_pool =
-            Direct3D11CaptureFramePool::Create(&direct3d_device, pixel_format, 1, gc_item.Size()?)?;
-        let frame_pool = Arc::new(frame_pool);
-        // Create capture session
-        let session = frame_pool.CreateCaptureSession(&gc_item)?;
-        let mut buffer = vec![0u8; 3840 * 2160 * 4];
-
-        let thread_id = unsafe { GetCurrentThreadId() };
-
-        // Set capture session closed event
-        let capture_closed_event_token = gc_item.Closed(&TypedEventHandler::<
-            GraphicsCaptureItem,
-            IInspectable,
-        >::new({
-            move |_, _| {
-                stop_thread.store(true, atomic::Ordering::Relaxed);
-                capture_close.store(true, atomic::Ordering::Relaxed);
-                // Stop the message loop
-                unsafe {
-                    PostThreadMessageW(thread_id, WM_QUIT, WPARAM::default(), LPARAM::default())?;
-                };
-                Result::Ok(())
-            }
-        }))?;
-
-        // Set frame pool frame arrived event
-        let frame_arrived_event_token = frame_pool.FrameArrived(&TypedEventHandler::<
-            Direct3D11CaptureFramePool,
-            IInspectable,
-        >::new({
-            // Init
-            let frame_pool = frame_pool.clone();
-            let stop_thread = self.stop_thread.clone();
-            let d3d_device = d3d_device.clone();
-            let context = d3d_device_context.clone();
-            let capture_frame = self.frame2.clone();
-
-            let mut last_size = gc_item.Size()?;
-            let direct3d_device_recreate = SendDirectX::new(direct3d_device.clone());
-
-            move |frame, _| {
-                // Return immediately if the thread is stopped
-                if stop_thread.load(atomic::Ordering::Relaxed) {
-                    return Ok(());
-                }
-                // Get frame
-                let frame = frame
-                    .as_ref()
-                    .expect("FrameArrived parameter unexpectedly returned None.")
-                    .TryGetNextFrame()?;
-                // Get frame time, content size and surface
-                let timespan = frame.SystemRelativeTime()?;
-                let frame_content_size = frame.ContentSize()?;
-                let frame_surface = frame.Surface()?;
-                // Convert surface to texture
-                let frame_dxgi_interface = frame_surface.cast::<IDirect3DDxgiInterfaceAccess>()?;
-                let frame_texture =
-                    unsafe { frame_dxgi_interface.GetInterface::<ID3D11Texture2D>()? };
-
-                // Get texture settings
-                let mut desc = D3D11_TEXTURE2D_DESC::default();
-                unsafe { frame_texture.GetDesc(&mut desc) }
-
-                // Check if the size has been changed, and recreate the frame pool if necessary
-                if frame_content_size.Width != last_size.Width
-                    || frame_content_size.Height != last_size.Height
-                {
-                    let direct3d_device_recreate = &direct3d_device_recreate;
-                    frame_pool.Recreate(
-                        &direct3d_device_recreate.0,
-                        pixel_format,
-                        1,
-                        frame_content_size,
-                    )?;
-                    last_size = frame_content_size;
-                    return Ok(());
-                }
-                // Set width & height
-                let texture_width = desc.Width;
-                let texture_height = desc.Height;
-
-                println!("Frame arrived: {}x{}", texture_width, texture_height);
-                // Create a frame
-                let frame = Frame::new();
-                (*capture_frame.lock()) = Some(frame);
-                Result::Ok(())
-            }
-        }))?;
-        session.StartCapture()?;
-
-        // Wait for the first frame to be ready if requested
+        // Wait for the first frame to be ready. Also checks if stop_thread is set to true by the
+        // Ctrl-C handler to enable interrupts during the first frame wait
         if await_first_frame.unwrap_or(false) {
-            while self.frame2.lock().is_none() {
+            while self.frame.lock().is_none() & !self.stop_thread.load(atomic::Ordering::Relaxed) {
                 sleep(Duration::from_millis(10));
             }
         }
-
         Ok(())
     }
 
     // Python property to check if the capture thread is running
     #[getter]
-    pub fn running(&self) -> bool {
+    pub fn active(&self) -> bool {
         self.thread.is_some()
     }
 
@@ -275,14 +295,25 @@ impl Capture {
     pub fn stop(&mut self) {
         self.stop_thread.store(true, atomic::Ordering::Relaxed);
         if let Some(thread) = self.thread.take() {
-            thread.join().unwrap(); // Wait for the thread to finish
+            thread
+                .join()
+                .unwrap()
+                .expect("Failed to join thread on capture stop"); // Wait for the thread to finish
         }
+        self.frame.lock().take(); // Clear the frame when the capture is stopped
     }
 
     // Convert the frame into a numpy array and return it to the user
     #[pyo3(name = "frame")]
     pub fn py_frame(&self, py: Python) -> PyResult<Py<PyArray1<u8>>> {
+        if self.thread.is_none() {
+            return Err(PyRuntimeError::new_err("Capture thread is not running."));
+        }
         Ok(PyArray1::from_vec(py, self.materialize_frame()?).to_owned())
+    }
+
+    pub fn frame_cnt(&self) -> i64 {
+        self.frame_cnt.load(atomic::Ordering::Relaxed)
     }
 }
 
