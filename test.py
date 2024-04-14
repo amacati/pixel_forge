@@ -1,15 +1,13 @@
+import matplotlib.pyplot as plt
+
 from pixel_forge import Capture, Window
-import time
 
 c = Capture()
 window = Window("Untitled - Notepad")
 c.start(window, await_first_frame=True)
-t = time.perf_counter()
-time.sleep(10)
 x = c.frame()
-print(x, x.shape, type(x))
-
-cnt = c.frame_cnt()
-dt = time.perf_counter() - t
-
-print(f"Frame count: {cnt}, Time elapsed: {dt:.2f}s, FPS: {cnt / dt:.2f}fps")
+c.stop()
+d = len(x) // 1440 // 4
+x = x.reshape((d, 1440, 4))
+plt.imshow(x)
+plt.show()

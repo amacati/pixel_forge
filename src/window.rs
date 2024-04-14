@@ -24,9 +24,9 @@ use crate::monitor::Monitor;
 pub enum WindowError {
     #[error("No active window found")]
     NoActiveWindow,
-    #[error("Failed to find window with name: {0}")]
+    #[error("Failed to find window with name '{0}'")]
     NotFound(String),
-    #[error("Failed to convert windows string from UTF-16: {0}")]
+    #[error("Failed to convert windows string '{0}' from UTF-16")]
     FailedToConvertWindowsString(#[from] FromUtf16Error),
     #[error("Windows API error: {0}")]
     WindowsError(#[from] windows::core::Error),

@@ -9,19 +9,14 @@ use std::time::Duration;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
-use windows::core::{Error, IInspectable, Interface};
+use windows::core::{IInspectable, Interface};
 use windows::Foundation::AsyncActionCompletedHandler;
-use windows::Foundation::{EventRegistrationToken, TypedEventHandler};
-use windows::Graphics::Capture::{
-    Direct3D11CaptureFramePool, GraphicsCaptureItem, GraphicsCaptureSession,
-};
-use windows::Graphics::DirectX::Direct3D11::{IDirect3DDevice, IDirect3DSurface};
+use windows::Foundation::TypedEventHandler;
+use windows::Graphics::Capture::{Direct3D11CaptureFramePool, GraphicsCaptureItem};
 use windows::Graphics::DirectX::DirectXPixelFormat;
 use windows::Win32::Foundation::{LPARAM, WPARAM};
-use windows::Win32::Graphics::Direct3D11::{
-    ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D, D3D11_TEXTURE2D_DESC,
-};
-use windows::Win32::System::Threading::{GetCurrentThreadId, GetThreadId};
+use windows::Win32::Graphics::Direct3D11::{ID3D11Texture2D, D3D11_TEXTURE2D_DESC};
+use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::System::WinRT::Direct3D11::IDirect3DDxgiInterfaceAccess;
 use windows::Win32::System::WinRT::{
     CreateDispatcherQueueController, DispatcherQueueOptions, RoInitialize, RoUninitialize,
@@ -36,7 +31,6 @@ use windows_result::Error as WindowsError;
 use ctrlc;
 use numpy::PyArray1;
 use parking_lot::Mutex;
-use rand::{thread_rng, Rng};
 
 use crate::capture_utils::{CaptureTarget, ColorFormat};
 use crate::direct_x::{create_d3d_device, create_direct3d_device, DirectXError, SendDirectX};
@@ -200,7 +194,6 @@ impl Capture {
                         .expect("FrameArrived parameter unexpectedly returned None.")
                         .TryGetNextFrame()?;
                     // Get frame time, content size and surface
-                    let timespan = frame.SystemRelativeTime()?;
                     let frame_content_size = frame.ContentSize()?;
                     let frame_surface = frame.Surface()?;
                     // Convert surface to texture
@@ -230,9 +223,15 @@ impl Capture {
                     // Set width & height
                     let texture_width = desc.Width;
                     let texture_height = desc.Height;
-
+                    println!("Frame size: {}x{}", texture_width, texture_height);
                     // Create a frame
-                    *capture_frame.lock() = Some(Frame::new());
+                    *capture_frame.lock() = Some(Frame::new(
+                        frame_texture,
+                        texture_height,
+                        texture_width,
+                        d3d_device.clone(),
+                        context.clone(),
+                    ));
                     Result::Ok(())
                 }
             }))?;
