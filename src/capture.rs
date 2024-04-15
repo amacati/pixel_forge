@@ -28,8 +28,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows_result::Error as WindowsError;
 
-use ctrlc;
-use numpy::PyArray1;
+use numpy::ndarray::{self, s};
+use numpy::PyArray3;
+use numpy::ToPyArray;
 use parking_lot::Mutex;
 
 use crate::capture_utils::{CaptureTarget, ColorFormat};
@@ -67,30 +68,13 @@ pub struct Capture {
     frame_cnt: Arc<AtomicI64>,
 }
 
-impl Capture {
-    pub fn materialize_frame(&self) -> Result<Vec<u8>, CaptureError> {
-        // Keep the lock_guard in scope to ensure the lock is still valid when we convert it to a
-        // Vec<u8>
-        let lock_guard = self.frame.lock();
-        let frame_ref = lock_guard.as_ref().ok_or(CaptureError::NoFrameAvailable)?;
-        Ok(Vec::<u8>::try_from(frame_ref)?)
-    }
-}
-
 #[pymethods]
 impl Capture {
     #[new]
     pub fn new() -> Self {
-        let stop_thread = Arc::new(AtomicBool::new(false));
-        let capture_close = Arc::new(AtomicBool::new(false));
-
-        let stop_flag = stop_thread.clone();
-        ctrlc::set_handler(move || stop_flag.store(true, atomic::Ordering::Relaxed))
-            .expect("Error setting Ctrl-C handler.");
-
         Self {
-            stop_thread,
-            capture_close,
+            stop_thread: Arc::new(AtomicBool::new(false)),
+            capture_close: Arc::new(AtomicBool::new(false)),
             thread: None,
             frame: Arc::new(Mutex::new(None)),
             frame_cnt: Arc::new(AtomicI64::new(0)),
@@ -223,7 +207,6 @@ impl Capture {
                     // Set width & height
                     let texture_width = desc.Width;
                     let texture_height = desc.Height;
-                    println!("Frame size: {}x{}", texture_width, texture_height);
                     // Create a frame
                     *capture_frame.lock() = Some(Frame::new(
                         frame_texture,
@@ -304,11 +287,26 @@ impl Capture {
 
     // Convert the frame into a numpy array and return it to the user
     #[pyo3(name = "frame")]
-    pub fn py_frame(&self, py: Python) -> PyResult<Py<PyArray1<u8>>> {
+    pub fn py_frame(&self, py: Python) -> PyResult<Py<PyArray3<u8>>> {
         if self.thread.is_none() {
             return Err(PyRuntimeError::new_err("Capture thread is not running."));
         }
-        Ok(PyArray1::from_vec(py, self.materialize_frame()?).to_owned())
+        let frame_guard = self.frame.lock();
+        let frame = frame_guard.as_ref().ok_or(CaptureError::NoFrameAvailable)?;
+        let data = frame.materialize()?;
+        let img_array = ndarray::arr1(data);
+        // For some reason, only the height of the frame is correct and the texture includes a white
+        // border. We calculate the width according to the number of available elements and later
+        // crop the frame back to the intended size
+        let height: usize = frame.height.try_into()?;
+        let dims: [usize; 3] = [height, data.len() / height / 4, 4];
+        let img_array = img_array
+            .into_shape(dims)
+            .expect("Failed to reshape frame into the correct dimensions");
+        let width: usize = frame.width.try_into()?;
+        // Crop image into the correct dimensions and discard any borders
+        let img_array = img_array.slice(s![0..height, 0..width, ..]).to_pyarray(py);
+        Ok(img_array.to_owned())
     }
 
     pub fn frame_cnt(&self) -> i64 {

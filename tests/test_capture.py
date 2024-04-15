@@ -26,23 +26,24 @@ def test_capture_frame(monitor: Monitor):
     frame = c.frame()
     c.stop()
     assert isinstance(frame, np.ndarray)
+    assert frame.shape == (monitor.height, monitor.width, 4)
 
 
-def test_capture_running(monitor: Monitor):
+def test_capture_active(monitor: Monitor):
     c = Capture()
-    assert not c.running, "Capture should not be running"
+    assert not c.active, "Capture should not be running"
     c.start(monitor, await_first_frame=True)
-    assert c.running, "Capture should be running"
+    assert c.active, "Capture should be running"
     c.stop()
-    assert not c.running, "Capture should not be running"
+    assert not c.active, "Capture should not be running"
 
 
 def test_capture_valid_frame(monitor: Monitor):
     c = Capture()
-    assert not c.running, "Capture should not be running"
+    assert not c.active, "Capture should not be running"
     c.start(monitor, await_first_frame=True)
     frame = c.frame()
     assert isinstance(frame, np.ndarray), "Frame should be a numpy array"
     assert frame.shape[0] > 0, "Frame must not be empty"
     c.stop()
-    assert not c.running, "Capture should not be running"
+    assert not c.active, "Capture should not be running"

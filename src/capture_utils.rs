@@ -41,9 +41,7 @@ impl TryInto<GraphicsCaptureItem> for CaptureTarget {
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
 pub enum ColorFormat {
-    Rgba16F = 10,
     Rgba8 = 28,
-    Bgra8 = 87,
 }
 
 impl Default for ColorFormat {
