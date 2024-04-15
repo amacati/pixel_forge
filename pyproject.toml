@@ -16,11 +16,10 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 keywords = ["screenshot", "window", "capture"]
-dynamic = ["version"]
 dependencies = ["numpy"]
 
 [tool.pyright]
-extension-pkg-allow-list = "pixel_forge_rs"
+extension-pkg-allow-list = "pixel_forge"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

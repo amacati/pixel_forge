@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-
 from pixel_forge import Capture, Monitor, primary_monitor
 
 
