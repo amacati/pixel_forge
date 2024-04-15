@@ -197,7 +197,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pixel_forge_rs"
+name = "pixel_forge"
 version = "0.1.0"
 dependencies = [
  "ctrlc",
