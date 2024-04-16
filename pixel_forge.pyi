@@ -95,7 +95,7 @@ class Capture:
         the first frame to arrive before returning from the ``start`` method.
     """
 
-    def start(self, capture_target: Monitor | Window, await_first_frame: bool = False) -> None:
+    def start(self, capture_target: Monitor | Window, await_first_frame: bool = True) -> None:
         """Start the capture thread.
 
         Args:
