@@ -14,14 +14,17 @@ use windows::Foundation::AsyncActionCompletedHandler;
 use windows::Foundation::TypedEventHandler;
 use windows::Graphics::Capture::{Direct3D11CaptureFramePool, GraphicsCaptureItem};
 use windows::Graphics::DirectX::DirectXPixelFormat;
+use windows::Win32::Foundation::{LPARAM, WPARAM};
 use windows::Win32::Graphics::Direct3D11::{ID3D11Texture2D, D3D11_TEXTURE2D_DESC};
+use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::System::WinRT::Direct3D11::IDirect3DDxgiInterfaceAccess;
 use windows::Win32::System::WinRT::{
     CreateDispatcherQueueController, DispatcherQueueOptions, RoInitialize, RoUninitialize,
     DQTAT_COM_NONE, DQTYPE_THREAD_CURRENT, RO_INIT_MULTITHREADED,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, GetMessageW, PostQuitMessage, TranslateMessage, MSG,
+    DispatchMessageW, GetMessageW, PostQuitMessage, PostThreadMessageW, TranslateMessage, MSG,
+    WM_QUIT,
 };
 use windows_result::Error as WindowsError;
 
@@ -46,6 +49,8 @@ pub enum CaptureError {
     FrameConversionError(#[from] FrameError),
     #[error("Capture thread exited unexpectedly with an error.")]
     CaptureThreadError,
+    #[error("Invalid capture target.")]
+    InvalidCaptureTarget,
 }
 
 impl From<CaptureError> for PyErr {
@@ -60,9 +65,8 @@ impl From<CaptureError> for PyErr {
 // frame when the user requests it to avoid unnecessary copies.
 #[pyclass]
 pub struct Capture {
-    stop_thread: Arc<AtomicBool>,
-    stopped_thread: Arc<AtomicBool>, // Flag to check if the capture thread is still responsive when stopping
     thread: Option<JoinHandle<Result<(), CaptureError>>>,
+    thread_id: Arc<Mutex<Option<u32>>>,
     frame: Arc<Mutex<Option<Frame>>>,
 }
 
@@ -71,9 +75,8 @@ impl Capture {
     #[new]
     pub fn new() -> Self {
         Self {
-            stop_thread: Arc::new(AtomicBool::new(false)),
-            stopped_thread: Arc::new(AtomicBool::new(false)),
             thread: None,
+            thread_id: Arc::new(Mutex::new(None)),
             frame: Arc::new(Mutex::new(None)),
         }
     }
@@ -83,15 +86,23 @@ impl Capture {
         capture_target: CaptureTarget,
         await_first_frame: Option<bool>,
     ) -> Result<(), CaptureError> {
+        // In case of a window capture, check if the window is valid
+        match capture_target {
+            CaptureTarget::Window(window) => {
+                if !window.valid() {
+                    return Err(CaptureError::InvalidCaptureTarget);
+                }
+            }
+            CaptureTarget::Monitor(_) => {}
+        }
         let gc_item: GraphicsCaptureItem = capture_target
             .try_into()
             .expect("Failed to convert CaptureTarget to GraphicsCaptureItem");
 
-        self.stop_thread.store(false, atomic::Ordering::Relaxed);
-        self.stopped_thread.store(false, atomic::Ordering::Relaxed);
+        self.thread_id.lock().take(); // Clear the thread_id when starting a new capture
+
         // Clone Arc capture struct members to use them in thread without borrowing
-        let stop_thread = self.stop_thread.clone();
-        let stopped_thread = self.stopped_thread.clone();
+        let thread_id = self.thread_id.clone();
         let frame = self.frame.clone();
 
         // Create a thread to run the capture
@@ -125,22 +136,16 @@ impl Capture {
                 Direct3D11CaptureFramePool,
                 IInspectable,
             >::new({
-                // Init
+                thread_id.lock().replace(unsafe { GetCurrentThreadId() });
                 let frame_pool = frame_pool.clone();
                 let d3d_device = d3d_device.clone();
                 let context = d3d_device_context.clone();
                 let capture_frame = frame.clone();
-                // Clone stop_thread flag again to use it in another closure
-                let stop_thread = stop_thread.clone();
 
                 let mut last_size = gc_item.Size()?;
                 let direct3d_device_recreate = SendDirectX::new(direct3d_device.clone());
 
                 move |frame, _| {
-                    // Return immediately if the thread is stopped
-                    if stop_thread.load(atomic::Ordering::Relaxed) {
-                        return Ok(());
-                    }
                     // Get frame
                     let frame = frame
                         .as_ref()
@@ -189,23 +194,14 @@ impl Capture {
             }))?;
             session.StartCapture()?;
 
-            // Create message loops. Pump messages while the message is not WM_QUIT and the
-            // stop_thread flag is not set
+            // Create message loops. Pump messages while the message is not WM_QUIT
             let mut msg = MSG::default();
             unsafe {
-                while GetMessageW(&mut msg, None, 0, 0).as_bool()
-                    & !stop_thread.load(atomic::Ordering::Relaxed)
-                {
+                while GetMessageW(&mut msg, None, 0, 0).as_bool() {
                     TranslateMessage(&msg);
                     DispatchMessageW(&msg);
                 }
             }
-            // Set stopped_thread flag to true to signal that the thread has stopped its main
-            // message loop. If the window is closed while the capture is running, the thread will
-            // silently exit and calling join on it will hang indefinitely. Therefore we test this
-            // flag in the in the stop method to make sure that the thread is still responsive
-            // before joining it
-            stopped_thread.store(true, atomic::Ordering::Relaxed);
             // Shutdown dispatcher queue
             let async_shutdown = controller.ShutdownQueueAsync()?;
             async_shutdown.SetCompleted(&AsyncActionCompletedHandler::new(
@@ -215,7 +211,7 @@ impl Capture {
                 },
             ))?;
 
-            // Stop capture
+            // Remove event handlers and close the frame pool and capture session
             frame_pool
                 .RemoveFrameArrived(frame_arrived_event_token)
                 .expect("Failed to remove Frame Arrived event handler");
@@ -226,9 +222,9 @@ impl Capture {
         });
         self.thread = Some(capture_thread);
 
-        // Wait for the first frame to be ready. Also checks if stop_thread is set to true by the
+        // Wait for the first frame to be ready if await_first_frame is set to true or None
         if await_first_frame.unwrap_or(true) {
-            while self.frame.lock().is_none() & !self.stop_thread.load(atomic::Ordering::Relaxed) {
+            while self.frame.lock().is_none() & self.thread.is_some() {
                 sleep(Duration::from_millis(10));
             }
         }
@@ -243,18 +239,14 @@ impl Capture {
 
     // Stop the capture thread and wait for it to join
     pub fn stop(&mut self) {
-        self.stop_thread.store(true, atomic::Ordering::Relaxed);
+        // If the thread_id is set, send a WM_QUIT message to the message pumping thread. The
+        // message pumping thread will receive the WM_QUIT message, stop its loop and close the
+        // dispatcher queue
+        if let Some(thread_id) = self.thread_id.lock().take() {
+            let _ = unsafe { PostThreadMessageW(thread_id, WM_QUIT, WPARAM(0), LPARAM(0)) };
+        }
         if let Some(thread) = self.thread.take() {
-            let tstart = std::time::Instant::now();
-            // Wait for the thread to respond to the stop signal for a maximum of 100ms
-            while !self.stopped_thread.load(atomic::Ordering::Relaxed)
-                & (std::time::Instant::now().duration_since(tstart) < Duration::from_millis(100))
-            {
-                sleep(Duration::from_millis(10));
-            }
-            if self.stopped_thread.load(atomic::Ordering::Relaxed) {
-                let _ = thread.join();
-            }
+            let _ = thread.join().expect("Failed to join capture thread");
         }
         self.frame.lock().take(); // Clear the frame when the capture is stopped
     }

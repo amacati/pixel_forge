@@ -40,6 +40,9 @@ impl From<WindowError> for PyErr {
 
 /// Window abstraction for the Windows operating system.
 ///
+/// Window instances are one of two possible structs that can be passed as capture targets to the
+/// capture struct.
+///
 /// # Example
 /// ```no_run
 /// use pixel_forge::window::Window;
@@ -82,10 +85,6 @@ impl Window {
 
     /// Check if the window is a valid window.
     ///
-    /// # Arguments
-    ///
-    /// * `window` - The window handle to check.
-    ///
     /// # Returns
     ///
     /// `true` if the window is valid, `false` otherwise.
@@ -120,7 +119,11 @@ impl Window {
         true
     }
 
-    /// Get the title of the window.
+    /// Get the window title.
+    ///
+    /// # Returns
+    ///
+    /// The title.
     #[getter]
     pub fn title(&self) -> Result<String, WindowError> {
         let len = unsafe { GetWindowTextLengthW(self.window_handle) };
@@ -157,9 +160,11 @@ impl Window {
         Window { window_handle }
     }
 
-    /// Get monitor that has the largest area of intersection with the window.
+    /// Get the monitor that has the largest area of intersection with the window.
     ///
-    /// Returns `None` if the window doesn't intersect with any monitor.
+    /// # Returns
+    ///
+    /// `None` if the window doesn't intersect with any monitor.
     #[must_use]
     pub fn monitor(&self) -> Option<Monitor> {
         let monitor = unsafe { MonitorFromWindow(self.window_handle, MONITOR_DEFAULTTONULL) };
@@ -178,7 +183,7 @@ impl Window {
     }
 }
 
-// Callback used for enumerating all windows.
+// Callback to enumerate all windows.
 unsafe extern "system" fn enum_windows_callback(window_handle: HWND, vec: LPARAM) -> BOOL {
     let windows = &mut *(vec.0 as *mut Vec<Window>);
 

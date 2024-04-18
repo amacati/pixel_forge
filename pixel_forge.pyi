@@ -91,8 +91,7 @@ class Capture:
     Note:
         The capture thread is started and stopped using the ``start`` and ``stop`` methods. If the
         capture thread has not been started or no frame has arrived yet, the ``frame`` method will
-        raise an error. To prevent this, you can use the ``await_first_frame`` parameter to wait for
-        the first frame to arrive before returning from the ``start`` method.
+        raise an error. To prevent this, ``start`` waits for the first frame to arrive by default.
     """
 
     def start(self, capture_target: Monitor | Window, await_first_frame: bool = True) -> None:
