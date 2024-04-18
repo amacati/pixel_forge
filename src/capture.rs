@@ -1,7 +1,6 @@
 // This code has been adapted from https://github.com/NiiightmareXD/windows-capture
 
 use std::mem;
-use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::thread::{self, sleep, JoinHandle};
 use std::time::Duration;

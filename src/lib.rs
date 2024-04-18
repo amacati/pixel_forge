@@ -1,5 +1,4 @@
 use pyo3::prelude::*;
-use pyo3::wrap_pyfunction;
 
 pub mod capture;
 mod capture_utils;
@@ -18,6 +17,6 @@ fn pixel_forge(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(monitor::enumerate_monitors, m)?)?;
     m.add_class::<monitor::Monitor>()?;
     m.add_class::<capture::Capture>()?;
-
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }
