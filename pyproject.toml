@@ -9,7 +9,7 @@ description = "Ultra-fast screen capture in Rust with Python bindings"
 readme = "README.md"
 authors = [{ name = "Martin Schuck", email = "real.amacati@gmail.com" }]
 license = { file = "LICENSE" }
-requires-python = ">=3.8"
+requires-python = ">=3.8.0"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
