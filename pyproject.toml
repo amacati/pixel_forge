@@ -18,6 +18,12 @@ classifiers = [
 keywords = ["screenshot", "window", "capture"]
 dependencies = ["numpy"]
 
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.urls]
+Repository = "https://github.com/amacati/pixel_forge"
+
 [tool.pyright]
 extension-pkg-allow-list = "pixel_forge"
 
