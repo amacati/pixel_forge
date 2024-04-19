@@ -4,16 +4,24 @@ build-backend = "maturin"
 
 [project]
 name = "pixel_forge"
-version = "0.1.0"
+version = "0.1.1"
 description = "Ultra-fast screen capture in Rust with Python bindings"
 readme = "README.md"
 authors = [{ name = "Martin Schuck", email = "real.amacati@gmail.com" }]
 license = { file = "LICENSE" }
 requires-python = ">=3.8.0"
 classifiers = [
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Windows",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Rust",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
 ]
 keywords = ["screenshot", "window", "capture"]
 dependencies = ["numpy"]

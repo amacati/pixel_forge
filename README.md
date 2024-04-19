@@ -1,4 +1,4 @@
-# pixel forge&emsp; [![Version]][Version URL] [![Licence]][License URL] [![Build Status]][Build Status URL] [![Python Version]][Python Version URL] [![Rust]][Rust URL]
+# pixel forge&emsp; [![Python Version]][Python Version URL] [![Rust]][Rust URL] [![Version]][Version URL] [![Licence]][License URL] [![Build Status]][Build Status URL]
 
 [Licence]: https://img.shields.io/badge/license-MIT-blue
 [License URL]: https://github.com/amacati/pixel_forge/blob/master/LICENSE
