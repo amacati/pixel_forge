@@ -37,13 +37,13 @@ impl From<WindowError> for PyErr {
         PyRuntimeError::new_err(error.to_string())
     }
 }
-/// Window(title: str) -> Window
+/// Window(name: str) -> Window
 /// Window abstraction for the Windows operating system.
 ///
 /// Windows can be used as capture target for the :class:`.Capture` class.
 ///
 /// Args:
-///     title: The title of the window.
+///     name: The name of the window.
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
 #[pyclass]
 pub struct Window {
@@ -52,11 +52,11 @@ pub struct Window {
 
 #[pymethods]
 impl Window {
-    /// from_name(title: str) -> Window
+    /// from_name(name: str) -> Window
     /// Create a :class:`.Window` instance from its name.
     ///
     /// Args:
-    ///     title: The title of the window.
+    ///     name: The name of the window.
     ///
     /// Returns:
     ///    The window instance.
@@ -64,12 +64,12 @@ impl Window {
     /// Raises:
     ///    NotFound: The window with the given name was not found.
     #[new]
-    pub fn new(title: &str) -> Result<Window, WindowError> {
-        let hstring_title = HSTRING::from(title);
-        let window_handle = unsafe { FindWindowW(None, &hstring_title) };
+    pub fn new(name: &str) -> Result<Window, WindowError> {
+        let hstring_name = HSTRING::from(name);
+        let window_handle = unsafe { FindWindowW(None, &hstring_name) };
 
         if window_handle.0 == 0 {
-            return Err(WindowError::NotFound(String::from(title)));
+            return Err(WindowError::NotFound(String::from(name)));
         }
 
         Ok(Window { window_handle })
@@ -107,9 +107,9 @@ impl Window {
         true
     }
 
-    /// :``str``: The title string of the window.
+    /// :``str``: The name string of the window.
     #[getter]
-    pub fn title(&self) -> Result<String, WindowError> {
+    pub fn name(&self) -> Result<String, WindowError> {
         let len = unsafe { GetWindowTextLengthW(self.window_handle) };
 
         let mut name = vec![0u16; usize::try_from(len).unwrap() + 1];

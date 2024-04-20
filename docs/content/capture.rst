@@ -2,6 +2,6 @@
 
 Capture
 =======
-.. autoclass:: pixel_forge.Capture
+.. autoapiclass:: pixel_forge.Capture
     :members:
     :undoc-members:

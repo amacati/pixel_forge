@@ -8,10 +8,9 @@
 
 import os
 import sys
+import subprocess
 
 on_rtd = os.environ.get("READTHEDOCS", None) == "True"
-if on_rtd or True:
-    sys.path.insert(0, os.path.abspath("../."))
 
 # -- Project information -----------------------------------------------------
 
@@ -27,17 +26,12 @@ release = "0.1.1"
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ["sphinx.ext.autodoc", "sphinx.ext.napoleon", "sphinx.ext.todo"]
+extensions = ["sphinx.ext.napoleon", "sphinx.ext.todo", "autoapi.extension"]
 
-# Autodoc config
-autodoc_member_order = "bysource"
-autodoc_default_options = {
-    "members": True,
-    "member-order": "bysource",
-    "special-members": "__init__",
-}
-autodoc_docstring_signature = True
-
+# AutoAPI config
+autoapi_dirs = ["../."]
+autoapi_add_toctree_entry = False
+autoapi_file_patterns = ["*.pyi"]
 
 if on_rtd:
     autodoc_mock_imports = []

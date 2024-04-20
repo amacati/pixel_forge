@@ -16,9 +16,8 @@ Frames are only materialized and copied to Python when requested.
    content/getting_started
 
 .. toctree::
-   :glob:
    :maxdepth: 1
-   :caption: Python API
+   :caption: API Reference
 
    content/capture
    content/window
@@ -26,7 +25,7 @@ Frames are only materialized and copied to Python when requested.
 
 .. toctree::
    :maxdepth: 1
-   :caption: Acknowledgements
+   :caption: Notes
 
    content/acknowledgements
 
