@@ -58,10 +58,12 @@ impl From<CaptureError> for PyErr {
     }
 }
 
-// The Capture struct is the central struct of pixel_forge. The main idea is to get either a monitor
-// or a window as target, create a Capture struct, and then start a capture thread that will update
-// the texture of the Capture struct whenever a new frame is available. We only materialize the
-// frame when the user requests it to avoid unnecessary copies.
+/// Capture class to capture frames from a monitor or a window.
+///
+/// The idea is to get either a :class:`.Monitor` or a :class:`.Window` as target, create a Capture
+/// object, and then start a capture thread that will update the internal frame of the Capture
+/// object whenever a new frame is available. Frames are only materialized, converted to NumPy
+/// arrays and passed over to Python when the user requests it to avoid unnecessary copies.
 #[pyclass]
 pub struct Capture {
     thread: Option<JoinHandle<Result<(), CaptureError>>>,
@@ -80,6 +82,22 @@ impl Capture {
         }
     }
 
+    /// start(capture_target: CaptureTarget, await_first_frame: bool = True)
+    ///
+    /// Start the capture.
+    ///
+    /// This registeres an event handler that automatically updates the latest frame whenever a new
+    /// frame is available. The frame can be accessed using :meth:`frame`. Since the event handler
+    /// runs in a separate thread, the first frame might not be available immediately. To ensure a
+    /// frame is available before continuing, set ``await_first_frame`` to True. This will block the
+    /// main thread until the first frame is available.
+    ///
+    /// .. note::
+    ///    You have to call :meth:`start` before any frames become available.
+    ///
+    /// Args:
+    ///     capture_target: The :class:`.Monitor` or :class:`.Window` to capture.
+    ///     await_first_frame: Waits for the first frame to arrive if True.
     pub fn start(
         &mut self,
         capture_target: CaptureTarget,
@@ -230,13 +248,13 @@ impl Capture {
         Ok(())
     }
 
-    // Python property to check if the capture thread is running
+    /// :``bool``: True if the capture thread is running, False otherwise.
     #[getter]
     pub fn active(&self) -> bool {
         self.thread.is_some()
     }
 
-    // Stop the capture thread and wait for it to join
+    /// Stop the capture thread, wait for it to join and invalidate the last frame.
     pub fn stop(&mut self) {
         // If the thread_id is set, send a WM_QUIT message to the message pumping thread. The
         // message pumping thread will receive the WM_QUIT message, stop its loop and close the
@@ -250,7 +268,10 @@ impl Capture {
         self.frame.lock().take(); // Clear the frame when the capture is stopped
     }
 
-    // Convert the frame into a numpy array and return it to the user
+    /// frame() -> np.ndarray
+    /// Convert the latest frame to an array and return it.
+    ///
+    /// :returns: The frame as a 3D NumPy array with dimensions [h w 4].
     #[pyo3(name = "frame")]
     pub fn py_frame(&self, py: Python) -> PyResult<Py<PyArray3<u8>>> {
         if self.thread.is_none() {

@@ -45,18 +45,14 @@ impl From<MonitorError> for PyErr {
     }
 }
 
-/// Monitor device for the Windows operating system.
+/// Monitor(id: int | None = None) -> Monitor
+/// Monitor class for the Windows operating system.
 ///
-/// # Example
-/// ```no_run
-/// use pixel_forge::monitor::Monitor;
+/// Monitor can be used as capture target for the :class:`.Capture` class. It also provides some
+/// convenience methods to get information about the monitor.
 ///
-/// fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     let monitor = primary_monitor()?;
-///     println!("Primary Monitor: {}", monitor.device_name()?);
-///
-///     Ok(())
-/// }
+/// Args:
+///    id: The index of the monitor. If None, the primary monitor is used.
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
 #[pyclass]
 pub struct Monitor {
@@ -65,12 +61,21 @@ pub struct Monitor {
 
 #[pymethods]
 impl Monitor {
+    /// new(id: int | None = None) -> Monitor
+    ///
+    /// Create a :class:`.Monitor` instance.
+    ///
+    /// Args:
+    ///    id: The monitor ID. If None, the primary monitor is used.
     #[new]
-    pub fn new() -> Self {
-        primary_monitor().unwrap()
+    pub fn new(id: Option<usize>) -> Self {
+        match id {
+            Some(id) => Monitor::from_index(id).unwrap(),
+            None => primary_monitor().unwrap(),
+        }
     }
 
-    /// Return the pixel width of the monitor.
+    /// :``int``: The pixel width of the monitor.
     #[getter]
     pub fn width(&self) -> Result<u32, MonitorError> {
         let mut device_mode = DEVMODEW {
@@ -92,7 +97,7 @@ impl Monitor {
         Ok(device_mode.dmPelsWidth)
     }
 
-    /// Returns the pixel height of the monitor.
+    /// :``int``: The pixel height of the monitor.
     #[getter]
     pub fn height(&self) -> Result<u32, MonitorError> {
         let mut device_mode = DEVMODEW {
@@ -114,14 +119,14 @@ impl Monitor {
         Ok(device_mode.dmPelsHeight)
     }
 
-    /// Return the index of the monitor.
+    /// :``int``: The index of the monitor.
     #[getter]
     pub fn index(&self) -> Result<usize, MonitorError> {
         let device_name = self.device_name()?;
         Ok(device_name.replace("\\\\.\\DISPLAY", "").parse()?)
     }
 
-    /// Return the refresh rate of the monitor in Hertz.
+    /// :``int``: The refresh rate of the monitor in Hz.
     #[getter]
     pub fn refresh_rate(&self) -> Result<u32, MonitorError> {
         let mut device_mode = DEVMODEW {
@@ -143,7 +148,7 @@ impl Monitor {
         Ok(device_mode.dmDisplayFrequency)
     }
 
-    /// Return the device name of the monitor.
+    /// :``str``: The monitor device name.
     #[getter]
     pub fn device_name(&self) -> Result<String, MonitorError> {
         let mut monitor_info = MONITORINFOEXW {
@@ -178,7 +183,7 @@ impl Monitor {
         Ok(device_name)
     }
 
-    /// Return the device string of the monitor.
+    /// :``str``: The device string of the monitor.
     #[getter]
     pub fn device_string(&self) -> Result<String, MonitorError> {
         let mut monitor_info = MONITORINFOEXW {
@@ -277,7 +282,12 @@ impl Monitor {
     }
 }
 
-/// Return the primary monitor.
+/// primary_monitor() -> Monitor
+///
+/// Get the primary monitor.
+///
+/// Returns:
+///    The monitor.
 #[pyfunction]
 pub fn primary_monitor() -> Result<Monitor, MonitorError> {
     let point = POINT { x: 0, y: 0 };
@@ -304,7 +314,12 @@ unsafe extern "system" fn enum_monitors_callback(
     TRUE
 }
 
-/// Return a list of all monitors.
+/// enumerate_monitors() -> list[Monitor]
+///
+/// Enumerate all monitors connected to the system.
+///
+/// Returns:
+///   The list of all monitors.
 #[pyfunction]
 pub fn enumerate_monitors() -> Result<Vec<Monitor>, MonitorError> {
     let mut monitors: Vec<Monitor> = Vec::new();

@@ -1,6 +1,13 @@
 from pixel_forge import Monitor, enumerate_monitors, primary_monitor
 
 
+def test_monitor_init():
+    m = Monitor()  # primary monitor
+    assert isinstance(m, Monitor)
+    m = Monitor(1)  # Also primary monitor, but with explicit id
+    assert isinstance(m, Monitor)
+
+
 def test_primary_monitor():
     monitor = primary_monitor()
     assert isinstance(monitor, Monitor)

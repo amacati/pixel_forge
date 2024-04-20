@@ -37,23 +37,13 @@ impl From<WindowError> for PyErr {
         PyRuntimeError::new_err(error.to_string())
     }
 }
-
+/// Window(title: str) -> Window
 /// Window abstraction for the Windows operating system.
 ///
-/// Window instances are one of two possible structs that can be passed as capture targets to the
-/// capture struct.
+/// Windows can be used as capture target for the :class:`.Capture` class.
 ///
-/// # Example
-/// ```no_run
-/// use pixel_forge::window::Window;
-///
-/// fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     let window = foreground_window()?;
-///     println!("Foreground window title: {}", window.title()?);
-///
-///     Ok(())
-/// }
-/// ```
+/// Args:
+///     title: The title of the window.
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
 #[pyclass]
 pub struct Window {
@@ -62,17 +52,19 @@ pub struct Window {
 
 #[pymethods]
 impl Window {
-    /// Create a `Window` instance from a window name.
+    /// from_name(title: str) -> Window
+    /// Create a :class:`.Window` instance from its name.
     ///
-    /// # Arguments
+    /// Args:
+    ///     title: The title of the window.
     ///
-    /// * `title` - The name of the window.
+    /// Returns:
+    ///    The window instance.
     ///
-    /// # Errors
-    ///
-    /// `Error::NotFound`: No window with that name.
+    /// Raises:
+    ///    NotFound: The window with the given name was not found.
     #[new]
-    pub fn from_name(title: &str) -> Result<Window, WindowError> {
+    pub fn new(title: &str) -> Result<Window, WindowError> {
         let hstring_title = HSTRING::from(title);
         let window_handle = unsafe { FindWindowW(None, &hstring_title) };
 
@@ -83,11 +75,7 @@ impl Window {
         Ok(Window { window_handle })
     }
 
-    /// Check if the window is a valid window.
-    ///
-    /// # Returns
-    ///
-    /// `true` if the window is valid, `false` otherwise.
+    /// :``bool``: True if the window is still valid (i.e., open), else False.
     #[getter]
     pub fn valid(&self) -> bool {
         if !unsafe { IsWindowVisible(self.window_handle).as_bool() } {
@@ -119,11 +107,7 @@ impl Window {
         true
     }
 
-    /// Get the window title.
-    ///
-    /// # Returns
-    ///
-    /// The title.
+    /// :``str``: The title string of the window.
     #[getter]
     pub fn title(&self) -> Result<String, WindowError> {
         let len = unsafe { GetWindowTextLengthW(self.window_handle) };
@@ -195,11 +179,15 @@ unsafe extern "system" fn enum_windows_callback(window_handle: HWND, vec: LPARAM
     TRUE
 }
 
-/// Return a vector of all available windows.
+/// enumerate_windows() -> list[Window]
 ///
-/// # Errors
+/// Enumerate all windows that are currently available.
 ///
-/// `WindowError`: Enumerating the windows has failed.
+/// Returns:
+///     A list of all windows.
+///
+/// Raises:
+///    WindowError: Enumerating the windows has failed.
 #[pyfunction]
 pub fn enumerate_windows() -> Result<Vec<Window>, WindowError> {
     let mut windows: Vec<Window> = Vec::new();
@@ -216,11 +204,15 @@ pub fn enumerate_windows() -> Result<Vec<Window>, WindowError> {
     Ok(windows)
 }
 
-/// Get the foreground window.
+/// foreground_window() -> Window
 ///
-/// # Errors
+/// Get the currently active window.
 ///
-/// `WindowError`: No active window found.
+/// Returns:
+///    The active window.
+///
+/// Raises:
+///   NoActiveWindow: No active window was found.
 #[pyfunction]
 pub fn foreground_window() -> Result<Window, WindowError> {
     let window_handle = unsafe { GetForegroundWindow() };

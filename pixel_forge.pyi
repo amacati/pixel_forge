@@ -51,6 +51,13 @@ def enumerate_monitors() -> list[Monitor]:
 class Monitor:
     """Monitor abstraction for Windows."""
 
+    def __init__(self, id: int | None = None):
+        """Create a new monitor object.
+
+        Args:
+            id: The monitor id. If None, the primary monitor is selected.
+        """
+
     @staticmethod
     def primary() -> Monitor:
         """Get the primary monitor.
@@ -111,7 +118,7 @@ class Capture:
         """Materialize the current frame textures into an array and return it.
 
         Returns:
-            The current frame as a numpy array.
+            The current frame as a numpy array with shape [H W 4] (RGBA).
 
         Raises:
             RuntimeError: If the capture thread has not yet picked up a frame.
