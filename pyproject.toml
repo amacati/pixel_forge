@@ -13,7 +13,7 @@ requires-python = ">=3.8.0"
 classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: Windows",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
@@ -31,6 +31,7 @@ test = ["pytest"]
 
 [project.urls]
 Repository = "https://github.com/amacati/pixel_forge"
+Documentation = "https://pixel-forge.readthedocs.io/en/latest"
 
 [tool.pyright]
 extension-pkg-allow-list = "pixel_forge"
