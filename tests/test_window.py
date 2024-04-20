@@ -11,4 +11,4 @@ def test_enumerate_windows():
 def test_window_properties():
     window = enumerate_windows()[0]
     assert window.valid
-    assert isinstance(window.title, str)
+    assert isinstance(window.name, str)

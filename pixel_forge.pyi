@@ -3,21 +3,30 @@ from __future__ import annotations
 import numpy as np
 
 def enumerate_windows() -> list[Window]:
-    """Create a list of all windows.
+    """Create a list of all windows that are currently available.
 
     Returns:
         The list of all windows.
+
+    Raises:
+        RuntimeError: If the window enumeration fails.
     """
 
 def foreground_window() -> Window:
     """Get the current foreground window.
 
     Returns:
-        The window.
+        The foreground window.
+
+    Raises:
+        RuntimeError: No foreground window was found.
     """
 
 class Window:
-    """Window abstraction for Windows."""
+    """Window abstraction for the Windows operating system.
+
+    Windows can be used as capture target for the :class:`.Capture` class.
+    """
 
     def __init__(self, name: str):
         """Create a new window object.
@@ -28,11 +37,11 @@ class Window:
 
     @property
     def valid(self) -> bool:
-        """Check if the window is still valid."""
+        """True if the window is still valid (i.e., open), else False."""
 
     @property
-    def title(self) -> str:
-        """The window title."""
+    def name(self) -> str:
+        """The window name."""
 
 def primary_monitor() -> Monitor:
     """Get the primary monitor.
@@ -49,21 +58,13 @@ def enumerate_monitors() -> list[Monitor]:
     """
 
 class Monitor:
-    """Monitor abstraction for Windows."""
+    """Monitor abstraction the Windows operating system."""
 
     def __init__(self, id: int | None = None):
         """Create a new monitor object.
 
         Args:
-            id: The monitor id. If None, the primary monitor is selected.
-        """
-
-    @staticmethod
-    def primary() -> Monitor:
-        """Get the primary monitor.
-
-        Returns:
-            The primary monitor.
+            id: The monitor ID. If None, the primary monitor is selected. Monitor IDs start at 1.
         """
 
     @property
@@ -91,20 +92,22 @@ class Monitor:
         """The monitor device string."""
 
 class Capture:
-    """Capture class encapsulating the screen capture functionality.
+    """Capture class to capture frames from a monitor or a window.
 
-    The screen recording is done in a separate thread. Each time a frame is produced, the thread
-    updates the frame pointer. Only when ``frame`` is called, the frame is materialized
-    into a numpy array.
-
-    Note:
-        The capture thread is started and stopped using the ``start`` and ``stop`` methods. If the
-        capture thread has not been started or no frame has arrived yet, the ``frame`` method will
-        raise an error. To prevent this, ``start`` waits for the first frame to arrive by default.
+    The idea is to get either a :class:`.Monitor` or a :class:`.Window` as target, create a Capture
+    object, and then start a capture thread that will update the internal frame of the Capture
+    object whenever a new frame is available. Frames are only materialized, converted to NumPy
+    arrays and passed over to Python when the user requests it to avoid unnecessary copies.
     """
 
     def start(self, capture_target: Monitor | Window, await_first_frame: bool = True) -> None:
-        """Start the capture thread.
+        """Start the capture.
+
+        This registeres an event handler that automatically updates the latest frame whenever a new
+        frame is available. The frame can be accessed using :meth:`frame`. Since the event handler
+        runs in a separate thread, the first frame might not be available immediately. To ensure a
+        frame is available before continuing, set ``await_first_frame`` to True. This will block the
+        main thread until the first frame is available.
 
         Args:
             capture_target: The monitor or window to capture.
@@ -112,13 +115,16 @@ class Capture:
         """
 
     def stop(self) -> None:
-        """Stop the capture thread."""
+        """Stop the capture thread, wait for it to join and invalidate the last frame.
+
+        This method is also called automatically when the object is garbage collected.
+        """
 
     def frame(self) -> np.ndarray:
-        """Materialize the current frame textures into an array and return it.
+        """Convert the latest frame to an array and return it.
 
         Returns:
-            The current frame as a numpy array with shape [H W 4] (RGBA).
+            The frame as a 3D NumPy array with dimensions [h w 4] (height x width x RGBA).
 
         Raises:
             RuntimeError: If the capture thread has not yet picked up a frame.
@@ -126,4 +132,4 @@ class Capture:
 
     @property
     def active(self) -> bool:
-        """Check if the capture thread is active."""
+        """True if the capture thread is running, False otherwise."""
