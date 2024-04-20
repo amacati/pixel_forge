@@ -8,10 +8,12 @@
 
 import os
 import sys
+import subprocess
 
 on_rtd = os.environ.get("READTHEDOCS", None) == "True"
 if on_rtd or True:
     sys.path.insert(0, os.path.abspath("../."))
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "../."])
 
 # -- Project information -----------------------------------------------------
 
