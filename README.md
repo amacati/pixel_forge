@@ -1,4 +1,5 @@
-# pixel forge&emsp; [![Python Version]][Python Version URL] [![Rust]][Rust URL] [![Version]][Version URL] [![Licence]][License URL] [![Build Status]][Build Status URL]
+# pixel forge&emsp; [![Python Version]][Python Version URL] [![Rust]][Rust URL] [![Version]][Version URL] [![Licence]][License URL] [![Build Status]][Build Status URL] [![Docs Status]][Docs URL]
+
 
 [Licence]: https://img.shields.io/badge/license-MIT-blue
 [License URL]: https://github.com/amacati/pixel_forge/blob/master/LICENSE
@@ -14,6 +15,9 @@
 
 [Rust]: https://img.shields.io/badge/Rust-x?logo=rust&color=CE412B
 [Rust URL]: https://www.rust-lang.org/
+
+[Docs Status]: https://readthedocs.org/projects/pixel-forge/badge/?version=latest
+[Docs URL]: https://pixel-forge.readthedocs.io/en/latest
 
 <p align="center">
   <img width="256" height="256" src="https://raw.githubusercontent.com/amacati/pixel_forge/master/docs/img/pixel_forge_banner.png">
@@ -51,6 +55,9 @@ time.sleep(1)
 img2 = c.frame()  # Returns the most recent frame
 c.stop()
 ```
+
+## Documentation
+For a more detailed description of the package, visit our [documentation][Docs URL].
 
 ## Credit
 This package started as a rewrite of [windows-capture](https://github.com/NiiightmareXD/windows-capture), and a good chunk of the implementation is taken directly from that project. Full credit goes to [NiiightmareXD](https://github.com/NiiightmareXD) for those parts.
