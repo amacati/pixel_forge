@@ -54,7 +54,7 @@ impl From<MonitorError> for PyErr {
 /// Args:
 ///    id: The index of the monitor. If None, the primary monitor is used.
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
-#[pyclass]
+#[pyclass(from_py_object)]
 pub struct Monitor {
     monitor_handle: HMONITOR,
 }

@@ -45,7 +45,7 @@ impl From<WindowError> for PyErr {
 /// Args:
 ///     name: The name of the window.
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
-#[pyclass]
+#[pyclass(from_py_object)]
 pub struct Window {
     window_handle: HWND,
 }

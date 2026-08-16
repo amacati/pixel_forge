@@ -292,7 +292,7 @@ impl Capture {
         let width: usize = frame.width.try_into()?;
         // Crop image into the correct dimensions and discard any borders
         let img_array = img_array.slice(s![0..height, 0..width, ..]).to_pyarray(py);
-        Ok(img_array.to_owned())
+        Ok(img_array.unbind())
     }
 }
 
