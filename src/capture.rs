@@ -241,7 +241,7 @@ impl Capture {
 
         // Wait for the first frame to be ready if await_first_frame is set to true or None
         if await_first_frame.unwrap_or(true) {
-            while self.frame.lock().is_none() & self.thread.is_some() {
+            while self.frame.lock().is_none() && self.thread.is_some() {
                 sleep(Duration::from_millis(10));
             }
         }
@@ -281,9 +281,9 @@ impl Capture {
         let frame = frame_guard.as_ref().ok_or(CaptureError::NoFrameAvailable)?;
         let data = frame.materialize()?;
         let img_array = ndarray::arr1(data);
-        // For some reason, only the height of the frame is correct and the texture includes a white
-        // border. We calculate the width according to the number of available elements and later
-        // crop the frame back to the intended size
+        // The staging texture pads each row to the driver's RowPitch, which is at least width*4
+        // bytes and results in buffer lengths of height*RowPitch. We reshape to the padded row
+        // width and crop back to the real width below.
         let height: usize = frame.height.try_into()?;
         let dims: [usize; 3] = [height, data.len() / height / 4, 4];
         let img_array = img_array
