@@ -14,7 +14,7 @@ use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT, DXGI_SAMPLE_DESC};
 
 use windows_result::Error as WindowsError;
 
-use crate::capture_utils::ColorFormat;
+use super::capture_utils::ColorFormat;
 
 #[derive(thiserror::Error, Debug)]
 pub enum FrameError {

@@ -32,9 +32,9 @@ use numpy::PyArray3;
 use numpy::ToPyArray;
 use parking_lot::Mutex;
 
-use crate::capture_utils::{CaptureTarget, ColorFormat};
-use crate::direct_x::{create_d3d_device, create_direct3d_device, DirectXError, SendDirectX};
-use crate::frame::{Frame, FrameError};
+use super::capture_utils::{CaptureTarget, ColorFormat};
+use super::direct_x::{create_d3d_device, create_direct3d_device, DirectXError, SendDirectX};
+use super::frame::{Frame, FrameError};
 
 #[derive(thiserror::Error, Debug)]
 pub enum CaptureError {

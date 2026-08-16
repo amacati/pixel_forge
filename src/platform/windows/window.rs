@@ -18,7 +18,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     IsWindowVisible, GWL_EXSTYLE, GWL_STYLE, WS_CHILD, WS_EX_TOOLWINDOW,
 };
 
-use crate::monitor::Monitor;
+use super::monitor::Monitor;
 
 #[derive(thiserror::Error, Debug)]
 pub enum WindowError {

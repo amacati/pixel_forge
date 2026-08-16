@@ -2,8 +2,8 @@ use pyo3::prelude::*;
 
 use windows::Graphics::Capture::GraphicsCaptureItem;
 
-use crate::monitor::Monitor;
-use crate::window::Window;
+use super::monitor::Monitor;
+use super::window::Window;
 
 // We define a capture target as either a monitor or a window. Pyo3 does not allow functions
 // generics, so we have to use an enum to represent the two types of capture sources that we can
