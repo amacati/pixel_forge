@@ -86,8 +86,6 @@ impl Window {
     }
 }
 
-/// enumerate_windows() -> list[Window]
-///
 /// List all tracked windows.
 #[pyfunction]
 pub fn enumerate_windows() -> Result<Vec<Window>, X11Error> {
@@ -99,8 +97,6 @@ pub fn enumerate_windows() -> Result<Vec<Window>, X11Error> {
         .collect())
 }
 
-/// foreground_window() -> Window
-///
 /// Get the currently active window.
 #[pyfunction]
 pub fn foreground_window() -> Result<Window, X11Error> {

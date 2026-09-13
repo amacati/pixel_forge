@@ -82,8 +82,6 @@ impl Capture {
         }
     }
 
-    /// start(capture_target: CaptureTarget, await_first_frame: bool = True)
-    ///
     /// Start the capture.
     ///
     /// This registeres an event handler that automatically updates the latest frame whenever a new
@@ -268,7 +266,6 @@ impl Capture {
         self.frame.lock().take(); // Clear the frame when the capture is stopped
     }
 
-    /// frame() -> np.ndarray
     /// Convert the latest frame to an array and return it.
     ///
     /// :returns: The frame as a 3D NumPy array with dimensions [h w 4].

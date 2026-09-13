@@ -37,7 +37,6 @@ impl From<WindowError> for PyErr {
         PyRuntimeError::new_err(error.to_string())
     }
 }
-/// Window(name: str) -> Window
 /// Window abstraction for the Windows operating system.
 ///
 /// Windows can be used as capture target for the :class:`.Capture` class.
@@ -52,7 +51,6 @@ pub struct Window {
 
 #[pymethods]
 impl Window {
-    /// from_name(name: str) -> Window
     /// Create a :class:`.Window` instance from its name.
     ///
     /// Args:
@@ -179,8 +177,6 @@ unsafe extern "system" fn enum_windows_callback(window_handle: HWND, vec: LPARAM
     TRUE
 }
 
-/// enumerate_windows() -> list[Window]
-///
 /// Enumerate all windows that are currently available.
 ///
 /// Returns:
@@ -204,8 +200,6 @@ pub fn enumerate_windows() -> Result<Vec<Window>, WindowError> {
     Ok(windows)
 }
 
-/// foreground_window() -> Window
-///
 /// Get the currently active window.
 ///
 /// Returns:

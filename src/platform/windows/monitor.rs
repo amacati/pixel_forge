@@ -45,7 +45,6 @@ impl From<MonitorError> for PyErr {
     }
 }
 
-/// Monitor(id: int | None = None) -> Monitor
 /// Monitor class for the Windows operating system.
 ///
 /// Monitor can be used as capture target for the :class:`.Capture` class. It also provides some
@@ -61,8 +60,6 @@ pub struct Monitor {
 
 #[pymethods]
 impl Monitor {
-    /// new(id: int | None = None) -> Monitor
-    ///
     /// Create a :class:`.Monitor` instance.
     ///
     /// Args:
@@ -282,8 +279,6 @@ impl Monitor {
     }
 }
 
-/// primary_monitor() -> Monitor
-///
 /// Get the primary monitor.
 ///
 /// Returns:
@@ -314,8 +309,6 @@ unsafe extern "system" fn enum_monitors_callback(
     TRUE
 }
 
-/// enumerate_monitors() -> list[Monitor]
-///
 /// Enumerate all monitors connected to the system.
 ///
 /// Returns:
