@@ -1,12 +1,12 @@
 # pixel forge
-[![Python Version]][Python Version URL] [![Rust]][Rust URL] [![Version]][Version URL] [![Licence]][License URL] [![Build Status]][Build Status URL] [![Docs Status]][Docs URL]
+[![Python Version]][Python Version URL] [![Rust]][Rust URL] [![Version]][Version URL] [![Licence]][License URL] [![CI]][CI URL] [![Docs Status]][Docs URL]
 
 
 [Licence]: https://img.shields.io/badge/license-MIT-blue
 [License URL]: https://github.com/amacati/pixel_forge/blob/master/LICENSE
 
-[Build Status]: https://img.shields.io/github/actions/workflow/status/amacati/pixel_forge/CI.yml
-[Build Status URL]: https://github.com/amacati/pixel_forge
+[CI]: https://img.shields.io/github/actions/workflow/status/amacati/pixel_forge/CI.yml?label=CI
+[CI URL]: https://github.com/amacati/pixel_forge/actions/workflows/CI.yml
 
 [Version]: https://img.shields.io/pypi/v/pixel-forge
 [Version URL]: https://pypi.org/project/pixel-forge/

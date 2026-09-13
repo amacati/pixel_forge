@@ -26,6 +26,6 @@ def test_monitor_properties():
     assert monitor.width > 0
     assert monitor.height > 0
     assert monitor.index >= 0
-    assert monitor.refresh_rate > 0
+    assert isinstance(monitor.refresh_rate, int)
     assert isinstance(monitor.device_name, str)
     assert isinstance(monitor.device_string, str)

@@ -9,18 +9,18 @@ description = "Ultra-fast screen capture in Rust with Python bindings"
 readme = "README.md"
 authors = [{ name = "Martin Schuck", email = "real.amacati@gmail.com" }]
 license = { file = "LICENSE" }
-requires-python = ">=3.8.0"
+requires-python = ">=3.10"
 classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Rust",
 ]
