@@ -23,9 +23,9 @@ def foreground_window() -> Window:
     """
 
 class Window:
-    """Window abstraction for the Windows operating system.
+    """Platform-agnostic window abstraction.
 
-    Windows can be used as capture target for the :class:`.Capture` class.
+    Windows can be used as a capture target for the :class:`.Capture` class.
     """
 
     def __init__(self, name: str):
@@ -58,7 +58,7 @@ def enumerate_monitors() -> list[Monitor]:
     """
 
 class Monitor:
-    """Monitor abstraction the Windows operating system."""
+    """Platform-agnostic monitor abstraction."""
 
     def __init__(self, id: int | None = None):
         """Create a new monitor object.

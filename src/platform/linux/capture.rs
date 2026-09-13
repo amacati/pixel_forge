@@ -2,7 +2,7 @@ use std::ptr;
 use std::slice;
 
 use numpy::ndarray::Array3;
-use numpy::{PyArray3, ToPyArray};
+use numpy::PyArray3;
 use pyo3::prelude::*;
 
 use x11rb::connection::Connection;
@@ -114,20 +114,21 @@ impl Capture {
         )?
         .reply()?;
 
-        // X has written the frame into shared memory as BGRX, so we swap to RGBA and set alpha to full.
+        // X returns BGRX on a little-endian TrueColor visual, so we swap blue and red and set alpha
+        // to 255. The swap runs the full pixel at a time as one 32-bit word to allow for compiler
+        // vectorization. The result is moved into NumPy without a further copy.
         // SAFETY: s.addr points to the shared segment of s.size bytes and stays attached for the
-        // Session's life.
-        let raw = unsafe { slice::from_raw_parts(s.addr.cast::<u8>(), s.size) };
+        // Session's life. The segment is page aligned, so reading it as u32 is sound.
+        let px_count = s.width as usize * s.height as usize;
+        let src = unsafe { slice::from_raw_parts(s.addr.cast::<u32>(), px_count) };
         let mut rgba = vec![0u8; s.size];
-        for (dst, src) in rgba.chunks_exact_mut(4).zip(raw.chunks_exact(4)) {
-            dst[0] = src[2];
-            dst[1] = src[1];
-            dst[2] = src[0];
-            dst[3] = 255;
+        for (dst, &px) in rgba.chunks_exact_mut(4).zip(src) {
+            let out = 0xFF00_0000 | ((px & 0xFF) << 16) | (px & 0xFF00) | ((px >> 16) & 0xFF);
+            dst.copy_from_slice(&out.to_ne_bytes());
         }
         let array = Array3::from_shape_vec((s.height as usize, s.width as usize, 4), rgba)
             .map_err(|e| X11Error::Other(e.to_string()))?;
-        Ok(array.to_pyarray(py).unbind())
+        Ok(PyArray3::from_owned_array(py, array).unbind())
     }
 }
 
