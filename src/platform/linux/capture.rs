@@ -7,6 +7,7 @@ use pyo3::prelude::*;
 
 use x11rb::connection::Connection;
 use x11rb::protocol::composite::{self, Redirect};
+use x11rb::protocol::randr;
 use x11rb::protocol::shm;
 use x11rb::protocol::xproto::{ConnectionExt as _, ImageFormat};
 use x11rb::rust_connection::RustConnection;
@@ -21,21 +22,27 @@ pub enum CaptureTarget {
     Window(Window),
 }
 
+// Capture target variants require separate handling.
+enum Target {
+    Window { pixmap: u32, window: u32, owns_redirect: bool },
+    Monitor,
+}
+
 // Session holds all resources for a running capture
 struct Session {
     conn: RustConnection,
-    drawable: u32,  // off-screen pixmap for a window to enable capture even when covered
-    pixmap: u32,
-    window: u32,
-    owns_redirect: bool,  // True if we redirected and have to unredirect on stop
+    drawable: u32,  // window's off-screen pixmap, or the root window for a monitor
+    x: i16,  // region origin within the drawable. (0, 0) for a window, monitor origin otherwise
+    y: i16,
     width: u16,
     height: u16,
     shmseg: u32,  // shared memory segment ID of the X server
     addr: *mut libc::c_void,
     size: usize,
+    target: Target,
 }
 
-/// Capture frames from a window. TODO: Add monitor capture
+/// Capture frames from a window or a monitor.
 #[pyclass(unsendable)]
 pub struct Capture {
     session: Option<Session>,
@@ -48,21 +55,17 @@ impl Capture {
         Self { session: None }
     }
 
-    /// Redirect the target window through Composite, get its off-screen pixmap, and attach a shared
-    /// memory segment for fast snapshots. Frames are then read on demand in :meth:`frame`.
+    /// Set up the capture. A window gets redirected through Composite and its off-screen pixmap
+    /// named, so it captures correctly even when occluded. A monitor reads the root window at the
+    /// monitor's region. Frames are then read on demand in :meth:`frame`.
     #[pyo3(signature = (capture_target, await_first_frame=None))]
     fn start(&mut self, capture_target: CaptureTarget, await_first_frame: Option<bool>) -> Result<(), X11Error> {
         let _ = await_first_frame; // Capture is always synchronous on Linux
         self.stop();
-        let window = match capture_target {
-            CaptureTarget::Window(window) => window.window,
-            CaptureTarget::Monitor(_) => {
-                return Err(X11Error::Other(
-                    "Monitor capture is not implemented yet on Linux".into(),
-                ));
-            }
-        };
-        self.session = Some(start_window(window)?);
+        self.session = Some(match capture_target {
+            CaptureTarget::Window(window) => start_window(window.window)?,
+            CaptureTarget::Monitor(monitor) => start_monitor(monitor.monitor_index())?,
+        });
         Ok(())
     }
 
@@ -81,9 +84,11 @@ impl Capture {
         // SAFETY: We allocated s.addr with shmat, and are the only owner of it, so it must be safe
         // to detach it here.
         unsafe { libc::shmdt(s.addr) };
-        let _ = s.conn.free_pixmap(s.pixmap);
-        if s.owns_redirect {
-            let _ = composite::unredirect_window(&s.conn, s.window, Redirect::AUTOMATIC);
+        if let Target::Window { pixmap, window, owns_redirect } = s.target {
+            let _ = s.conn.free_pixmap(pixmap);
+            if owns_redirect {
+                let _ = composite::unredirect_window(&s.conn, window, Redirect::AUTOMATIC);
+            }
         }
         let _ = s.conn.flush();
     }
@@ -98,8 +103,8 @@ impl Capture {
         shm::get_image(
             &s.conn,
             s.drawable,
-            0,
-            0,
+            s.x,
+            s.y,
             s.width,
             s.height,
             u32::MAX,
@@ -142,7 +147,7 @@ fn start_window(window: u32) -> Result<Session, X11Error> {
 
     // X does not render occluded windows, so we use a pixmap of the same size to force it to render
     // the full window even when it's covered. The redirect fails if we already redirected with
-    // another client. 
+    // another client.
     let owns_redirect = composite::redirect_window(&conn, window, Redirect::AUTOMATIC)?
         .check()
         .is_ok();
@@ -160,14 +165,14 @@ fn start_window(window: u32) -> Result<Session, X11Error> {
         Ok((shmseg, addr)) => Ok(Session {
             conn,
             drawable: pixmap,
-            pixmap,
-            window,
-            owns_redirect,
+            x: 0,
+            y: 0,
             width,
             height,
             shmseg,
             addr,
             size,
+            target: Target::Window { pixmap, window, owns_redirect },
         }),
         Err(e) => {
             let _ = conn.free_pixmap(pixmap);
@@ -178,6 +183,32 @@ fn start_window(window: u32) -> Result<Session, X11Error> {
             Err(e)
         }
     }
+}
+
+fn start_monitor(index: usize) -> Result<Session, X11Error> {
+    // Reads the root window at the monitor's region
+    let (conn, screen) = connect()?;
+    let root = conn.setup().roots[screen].root;
+    let mut monitors = randr::get_monitors(&conn, root, true)?.reply()?.monitors;
+    if index < 1 || index > monitors.len() {
+        return Err(X11Error::NoMonitor);
+    }
+    let monitor = monitors.swap_remove(index - 1);
+    let size = monitor.width as usize * monitor.height as usize * 4;
+    let (shmseg, addr) = attach_shm(&conn, size)?;
+
+    Ok(Session {
+        conn,
+        drawable: root,
+        x: monitor.x,
+        y: monitor.y,
+        width: monitor.width,
+        height: monitor.height,
+        shmseg,
+        addr,
+        size,
+        target: Target::Monitor,
+    })
 }
 
 // Create a shared memory segment of `size` bytes and attach it to the process and X server.
