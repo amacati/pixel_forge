@@ -10,7 +10,11 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = "0.29"
-# Windows API
+numpy = "0.29"
+thiserror = "2.0"
+
+# Windows (Windows Graphics Capture) backend
+[target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.54.0", features = [
     "Win32_System_WinRT_Graphics_Capture",
     "Win32_Graphics_Direct3D11",
@@ -34,11 +38,10 @@ windows = { version = "0.54.0", features = [
     "Media_Core",
     "Media_Transcoding",
 ] }
-
 windows-result = "0.1.1"
-# Mutex acceleration
 parking_lot = "0.12"
-# Transfer vectors to Python as numpy arrays without list overhead
-numpy = "0.29"
-# Error handling
-thiserror = "2.0"
+
+# Linux (X11) backend
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.14", features = ["composite", "shm", "randr"] }
+libc = "0.2"
