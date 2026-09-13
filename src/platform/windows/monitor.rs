@@ -65,6 +65,7 @@ impl Monitor {
     /// Args:
     ///    id: The monitor ID. If None, the primary monitor is used.
     #[new]
+    #[pyo3(signature = (id=None))]
     pub fn new(id: Option<usize>) -> Self {
         match id {
             Some(id) => Monitor::from_index(id).unwrap(),

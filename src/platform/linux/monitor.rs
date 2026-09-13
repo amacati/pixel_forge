@@ -15,7 +15,9 @@ pub struct Monitor;
 #[pymethods]
 impl Monitor {
     #[new]
-    fn new(_id: Option<usize>) -> PyResult<Self> {
+    #[pyo3(signature = (id=None))]
+    fn new(id: Option<usize>) -> PyResult<Self> {
+        let _ = id;
         pending()
     }
 

@@ -96,6 +96,7 @@ impl Capture {
     /// Args:
     ///     capture_target: The :class:`.Monitor` or :class:`.Window` to capture.
     ///     await_first_frame: Waits for the first frame to arrive if True.
+    #[pyo3(signature = (capture_target, await_first_frame=None))]
     pub fn start(
         &mut self,
         capture_target: CaptureTarget,
