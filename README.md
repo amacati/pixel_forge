@@ -17,8 +17,8 @@
 [Rust]: https://img.shields.io/badge/Rust-x?logo=rust&color=CE412B
 [Rust URL]: https://www.rust-lang.org/
 
-[Docs Status]: https://readthedocs.org/projects/pixel-forge/badge/?version=latest
-[Docs URL]: https://pixel-forge.readthedocs.io/en/latest
+[Docs Status]: https://img.shields.io/github/actions/workflow/status/amacati/pixel_forge/docs.yml?label=docs
+[Docs URL]: https://amacati.github.io/pixel_forge/
 
 <p align="center">
   <img width="256" height="256" src="https://raw.githubusercontent.com/amacati/pixel_forge/master/docs/img/pixel_forge_banner.png">

@@ -32,7 +32,7 @@ test = ["pytest"]
 
 [project.urls]
 Repository = "https://github.com/amacati/pixel_forge"
-Documentation = "https://pixel-forge.readthedocs.io/en/latest"
+Documentation = "https://amacati.github.io/pixel_forge/"
 
 [tool.pyright]
 extension-pkg-allow-list = "pixel_forge"

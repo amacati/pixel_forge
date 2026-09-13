@@ -32,6 +32,7 @@ extensions = ["sphinx.ext.napoleon", "sphinx.ext.todo", "autoapi.extension"]
 autoapi_dirs = ["../."]
 autoapi_add_toctree_entry = False
 autoapi_file_patterns = ["*.pyi"]
+autoapi_ignore = ["*/.venv*/*", "*/site-packages/*", "*/_build/*", "*/target/*"]
 
 if on_rtd:
     autodoc_mock_imports = []
