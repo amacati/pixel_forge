@@ -24,7 +24,7 @@
   <img width="256" height="256" src="https://raw.githubusercontent.com/amacati/pixel_forge/master/docs/img/pixel_forge_banner.png">
 </p>
 
-Ultra-fast screen capture in Rust with Python bindings
+Ultra-fast screen capture in Rust with Python bindings.
 
 ## Installing
 
@@ -33,6 +33,15 @@ The package can be installed via
 ```bash
 pip install pixel_forge
 ```
+
+Wheels are provided for Windows and Linux (x86_64).
+
+## Platform support
+
+The capture backend is selected automatically at build time.
+
+- **Windows**: capture through Windows Graphics Capture.
+- **Linux**: capture through X11. Wayland support through XWayland.
 
 ## Example
 

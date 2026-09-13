@@ -13,9 +13,6 @@ Getting Started
     c.start(m)
     img = c.frame()
 
-.. warning::
-    ``pixel_forge`` is currently only available for Windows! This code will not work on other operating systems.
-
 You can also capture a screenshot of a specific monitor:
 
 .. code-block:: python

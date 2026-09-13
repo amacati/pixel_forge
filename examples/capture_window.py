@@ -6,6 +6,7 @@ Requires matplotlib for display (``pip install matplotlib``).
 """
 
 import matplotlib.pyplot as plt
+
 import pixel_forge as pf
 
 

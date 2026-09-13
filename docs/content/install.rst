@@ -10,9 +10,6 @@ To install ``pixel_forge``, you can use pip:
 
 This will install the Python package with the precompiled library without requiring Rust to be installed on your system.
 
-.. warning::
-    ``pixel_forge`` is currently only available for Windows!
-
 Building from Source
 --------------------
 Alternatively, you can build the package from source by cloning the repository and compile it with pip:
