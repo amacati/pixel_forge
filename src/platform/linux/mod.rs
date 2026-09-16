@@ -1,7 +1,6 @@
 //! Linux (X11) backend.
 //!
-//! Window lookup and capture go through the X server over an XCB connection.
-//! TODO: The monitor path is not implemented yet.
+//! Window and monitor lookup and capture go through the X server over an XCB connection.
 
 mod capture;
 mod error;
