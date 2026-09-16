@@ -2,10 +2,12 @@ use std::cell::Cell;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
 use numpy::{PyArray3, PyArrayMethods};
+
+use super::super::destination;
 use parking_lot::{Condvar, Mutex};
 
 use windows::core::{IInspectable, Interface, Ref};
@@ -48,6 +50,8 @@ pub enum CaptureError {
     NoStagingTexture,
     #[error("Frame buffer is not contiguous: {0}")]
     NotContiguous(#[from] numpy::AsSliceError),
+    #[error(transparent)]
+    Python(#[from] PyErr),
     #[error("Windows API error: {0}")]
     WindowsError(#[from] windows::core::Error),
     #[error(transparent)]
@@ -58,7 +62,11 @@ pub enum CaptureError {
 
 impl From<CaptureError> for PyErr {
     fn from(error: CaptureError) -> PyErr {
-        PyRuntimeError::new_err(error.to_string())
+        match error {
+            CaptureError::Python(err) => err,
+            e @ CaptureError::NotContiguous(_) => PyValueError::new_err(e.to_string()),
+            e => PyRuntimeError::new_err(e.to_string()),
+        }
     }
 }
 
@@ -207,10 +215,17 @@ impl Capture {
 
     /// Read the latest frame back from the GPU and return it.
     ///
+    /// Args:
+    ///     out: An optional [h w 4] uint8 array to write into.
+    ///
     /// Returns:
     ///     The frame as a 3D NumPy array with dimensions [h w 4].
-    #[pyo3(name = "frame")]
-    pub fn py_frame<'py>(&self, py: Python<'py>) -> Result<Bound<'py, PyArray3<u8>>, CaptureError> {
+    #[pyo3(name = "frame", signature = (out=None))]
+    pub fn py_frame<'py>(
+        &self,
+        py: Python<'py>,
+        out: Option<Bound<'py, PyArray3<u8>>>,
+    ) -> Result<Bound<'py, PyArray3<u8>>, CaptureError> {
         let session = self.session.as_ref().ok_or(CaptureError::NotRunning)?;
         // Clone the frame out of the slot so that the capture thread can keep publishing. The clone
         // keeps this surface checked out.
@@ -234,10 +249,9 @@ impl Capture {
         let width = (size.Width.max(0) as u32).min(desc.Width);
         let height = (size.Height.max(0) as u32).min(desc.Height);
 
-        // SAFETY: left uninitialised because the readback below writes every byte of it.
-        let array = unsafe { PyArray3::<u8>::new(py, [height as usize, width as usize, 4], false) };
-        // SAFETY: the array was just created and has not been handed to Python yet, so nothing else
-        // can observe its buffer while the readback fills it.
+        let array = destination(py, out, height as usize, width as usize)?;
+        // SAFETY: NumPy arrays are not aliased by other Python objects here, and the readback below
+        // is the only writer for as long as the borrow lives.
         let dst = unsafe { array.as_slice_mut()? };
         let readback = &session.readback;
         py.detach(|| readback.lock().read(&texture, width, height, dst))?;

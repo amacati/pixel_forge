@@ -1,5 +1,5 @@
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::PyErr;
-use pyo3::exceptions::PyRuntimeError;
 
 /// Errors raised by the X11 backend.
 #[derive(thiserror::Error, Debug)]
@@ -22,10 +22,18 @@ pub enum X11Error {
     MonitorIndex,
     #[error("{0}")]
     Other(String),
+    #[error("Frame buffer is not contiguous: {0}")]
+    NotContiguous(#[from] numpy::AsSliceError),
+    #[error(transparent)]
+    Python(#[from] PyErr),
 }
 
 impl From<X11Error> for PyErr {
     fn from(error: X11Error) -> PyErr {
-        PyRuntimeError::new_err(error.to_string())
+        match error {
+            X11Error::Python(err) => err,
+            e @ X11Error::NotContiguous(_) => PyValueError::new_err(e.to_string()),
+            e => PyRuntimeError::new_err(e.to_string()),
+        }
     }
 }

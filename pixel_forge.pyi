@@ -123,14 +123,19 @@ class Capture:
         This method is also called automatically when the object is garbage collected.
         """
 
-    def frame(self) -> np.ndarray:
+    def frame(self, out: np.ndarray | None = None) -> np.ndarray:
         """Convert the latest frame to an array and return it.
+
+        Args:
+            out: An optional [h w 4] uint8 array to write the frame into. If None, a new array is
+                allocated for every call.
 
         Returns:
             The frame as a 3D NumPy array with dimensions [h w 4] (height x width x RGBA).
 
         Raises:
             RuntimeError: If the capture thread has not yet picked up a frame.
+            ValueError: If ``out`` does not have the shape of the current frame.
         """
 
     @property

@@ -1,8 +1,7 @@
 use std::ptr;
 use std::slice;
 
-use numpy::ndarray::Array3;
-use numpy::PyArray3;
+use numpy::{PyArray3, PyArrayMethods};
 use pyo3::prelude::*;
 
 use x11rb::connection::Connection;
@@ -12,9 +11,10 @@ use x11rb::protocol::shm;
 use x11rb::protocol::xproto::{ConnectionExt as _, ImageFormat};
 use x11rb::rust_connection::RustConnection;
 
+use super::super::destination;
 use super::error::X11Error;
 use super::monitor::Monitor;
-use super::window::{Window, connect};
+use super::window::{connect, Window};
 
 #[derive(FromPyObject)]
 pub enum CaptureTarget {
@@ -24,21 +24,24 @@ pub enum CaptureTarget {
 
 // Capture target variants require separate handling.
 enum Target {
-    Window { pixmap: u32, window: u32, owns_redirect: bool },
+    Window {
+        pixmap: u32,
+        window: u32,
+        owns_redirect: bool,
+    },
     Monitor,
 }
 
 // Session holds all resources for a running capture
 struct Session {
     conn: RustConnection,
-    drawable: u32,  // window's off-screen pixmap, or the root window for a monitor
-    x: i16,  // region origin within the drawable. (0, 0) for a window, monitor origin otherwise
+    drawable: u32, // window's off-screen pixmap, or the root window for a monitor
+    x: i16, // region origin within the drawable. (0, 0) for a window, monitor origin otherwise
     y: i16,
     width: u16,
     height: u16,
-    shmseg: u32,  // shared memory segment ID of the X server
+    shmseg: u32, // shared memory segment ID of the X server
     addr: *mut libc::c_void,
-    size: usize,
     target: Target,
 }
 
@@ -59,7 +62,11 @@ impl Capture {
     /// named, so it captures correctly even when occluded. A monitor reads the root window at the
     /// monitor's region. Frames are then read on demand in :meth:`frame`.
     #[pyo3(signature = (capture_target, await_first_frame=None))]
-    fn start(&mut self, capture_target: CaptureTarget, await_first_frame: Option<bool>) -> Result<(), X11Error> {
+    fn start(
+        &mut self,
+        capture_target: CaptureTarget,
+        await_first_frame: Option<bool>,
+    ) -> Result<(), X11Error> {
         let _ = await_first_frame; // Capture is always synchronous on Linux
         self.stop();
         self.session = Some(match capture_target {
@@ -84,7 +91,12 @@ impl Capture {
         // SAFETY: We allocated s.addr with shmat, and are the only owner of it, so it must be safe
         // to detach it here.
         unsafe { libc::shmdt(s.addr) };
-        if let Target::Window { pixmap, window, owns_redirect } = s.target {
+        if let Target::Window {
+            pixmap,
+            window,
+            owns_redirect,
+        } = s.target
+        {
             let _ = s.conn.free_pixmap(pixmap);
             if owns_redirect {
                 let _ = composite::unredirect_window(&s.conn, window, Redirect::AUTOMATIC);
@@ -94,8 +106,15 @@ impl Capture {
     }
 
     /// Grab the current contents of the target and return them as an [h, w, 4] RGBA array.
-    #[pyo3(name = "frame")]
-    fn py_frame(&self, py: Python) -> Result<Py<PyArray3<u8>>, X11Error> {
+    ///
+    /// Args:
+    ///     out: An optional [h w 4] uint8 array to write into.
+    #[pyo3(name = "frame", signature = (out=None))]
+    fn py_frame<'py>(
+        &self,
+        py: Python<'py>,
+        out: Option<Bound<'py, PyArray3<u8>>>,
+    ) -> Result<Bound<'py, PyArray3<u8>>, X11Error> {
         let s = self
             .session
             .as_ref()
@@ -114,21 +133,23 @@ impl Capture {
         )?
         .reply()?;
 
+        let array = destination(py, out, s.height as usize, s.width as usize)?;
+        // SAFETY: NumPy arrays are not aliased by other Python objects here, and the swap below is
+        // the only writer for as long as the borrow lives.
+        let dst = unsafe { array.as_slice_mut()? };
+
         // X returns BGRX on a little-endian TrueColor visual, so we swap blue and red and set alpha
         // to 255. The swap runs the full pixel at a time as one 32-bit word to allow for compiler
-        // vectorization. The result is moved into NumPy without a further copy.
+        // vectorization.
         // SAFETY: s.addr points to the shared segment of s.size bytes and stays attached for the
         // Session's life. The segment is page aligned, so reading it as u32 is sound.
         let px_count = s.width as usize * s.height as usize;
         let src = unsafe { slice::from_raw_parts(s.addr.cast::<u32>(), px_count) };
-        let mut rgba = vec![0u8; s.size];
-        for (dst, &px) in rgba.chunks_exact_mut(4).zip(src) {
-            let out = 0xFF00_0000 | ((px & 0xFF) << 16) | (px & 0xFF00) | ((px >> 16) & 0xFF);
-            dst.copy_from_slice(&out.to_ne_bytes());
+        for (dst, &px) in dst.chunks_exact_mut(4).zip(src) {
+            let px = 0xFF00_0000 | ((px & 0xFF) << 16) | (px & 0xFF00) | ((px >> 16) & 0xFF);
+            dst.copy_from_slice(&px.to_ne_bytes());
         }
-        let array = Array3::from_shape_vec((s.height as usize, s.width as usize, 4), rgba)
-            .map_err(|e| X11Error::Other(e.to_string()))?;
-        Ok(PyArray3::from_owned_array(py, array).unbind())
+        Ok(array)
     }
 }
 
@@ -172,8 +193,11 @@ fn start_window(window: u32) -> Result<Session, X11Error> {
             height,
             shmseg,
             addr,
-            size,
-            target: Target::Window { pixmap, window, owns_redirect },
+            target: Target::Window {
+                pixmap,
+                window,
+                owns_redirect,
+            },
         }),
         Err(e) => {
             let _ = conn.free_pixmap(pixmap);
@@ -207,7 +231,6 @@ fn start_monitor(index: usize) -> Result<Session, X11Error> {
         height: monitor.height,
         shmseg,
         addr,
-        size,
         target: Target::Monitor,
     })
 }
@@ -230,12 +253,15 @@ fn attach_shm(conn: &RustConnection, size: usize) -> Result<(u32, *mut libc::c_v
         return Err(X11Error::Other("shmat failed".into()));
     }
 
-    let attached = conn.generate_id().map_err(X11Error::from).and_then(|shmseg| {
-        shm::attach(conn, shmseg, shmid as u32, false)
-            .map_err(X11Error::from)
-            .and_then(|cookie| cookie.check().map_err(X11Error::from))
-            .map(|()| shmseg)
-    });
+    let attached = conn
+        .generate_id()
+        .map_err(X11Error::from)
+        .and_then(|shmseg| {
+            shm::attach(conn, shmseg, shmid as u32, false)
+                .map_err(X11Error::from)
+                .and_then(|cookie| cookie.check().map_err(X11Error::from))
+                .map(|()| shmseg)
+        });
 
     match attached {
         Ok(shmseg) => {
