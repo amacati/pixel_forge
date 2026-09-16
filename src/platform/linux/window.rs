@@ -2,7 +2,8 @@ use pyo3::prelude::*;
 
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    AtomEnum, ConfigureWindowAux, ConnectionExt, InputFocus, MapState, StackMode,
+    AtomEnum, ClientMessageEvent, ConfigureWindowAux, ConnectionExt, EventMask, InputFocus,
+    MapState, StackMode,
 };
 use x11rb::rust_connection::RustConnection;
 
@@ -52,6 +53,18 @@ fn title(conn: &RustConnection, window: u32) -> Result<Option<String>, X11Error>
     Ok(Some(String::from_utf8_lossy(&reply.value).into_owned()))
 }
 
+/// The window id the window manager marks active, if any.
+fn active_window(conn: &RustConnection, root: u32) -> Result<Option<u32>, X11Error> {
+    let atom = intern(conn, b"_NET_ACTIVE_WINDOW")?;
+    let reply = conn
+        .get_property(false, root, atom, AtomEnum::WINDOW, 0, 1)?
+        .reply()?;
+    Ok(reply
+        .value32()
+        .and_then(|mut it| it.next())
+        .filter(|&w| w != 0))
+}
+
 /// Window abstraction for X11.
 ///
 /// Windows are capture targets for the :class:`.Capture` class.
@@ -94,23 +107,34 @@ impl Window {
         Ok(title(&conn, self.window)?.unwrap_or_default())
     }
 
-    /// Raise the window and give it the input focus.
+    /// Raise the window and focus on it.
     fn focus(&self) -> Result<(), X11Error> {
-        let (conn, _) = connect()?;
+        let (conn, screen) = connect()?;
+        let root = conn.setup().roots[screen].root;
         conn.configure_window(
             self.window,
             &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
         )?;
         conn.set_input_focus(InputFocus::PARENT, self.window, x11rb::CURRENT_TIME)?;
+        // Ask the window manager to fulfill the request even with focus-stealing prevention
+        let atom = intern(&conn, b"_NET_ACTIVE_WINDOW")?;
+        let event = ClientMessageEvent::new(32, self.window, atom, [2, 0, 0, 0, 0]);
+        conn.send_event(
+            false,
+            root,
+            EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT,
+            event,
+        )?;
         conn.flush()?;
         Ok(())
     }
 
-    /// :``bool``: True if the window currently holds the input focus, else False.
+    /// :``bool``: True if the window is the window manager's active window, else False.
     #[getter]
     fn focused(&self) -> Result<bool, X11Error> {
-        let (conn, _) = connect()?;
-        Ok(conn.get_input_focus()?.reply()?.focus == self.window)
+        let (conn, screen) = connect()?;
+        let root = conn.setup().roots[screen].root;
+        Ok(active_window(&conn, root)? == Some(self.window))
     }
 }
 
@@ -130,15 +154,7 @@ pub fn enumerate_windows() -> Result<Vec<Window>, X11Error> {
 pub fn foreground_window() -> Result<Window, X11Error> {
     let (conn, screen) = connect()?;
     let root = conn.setup().roots[screen].root;
-    let atom = intern(&conn, b"_NET_ACTIVE_WINDOW")?;
-    let reply = conn
-        .get_property(false, root, atom, AtomEnum::WINDOW, 0, 1)?
-        .reply()?;
-    match reply
-        .value32()
-        .and_then(|mut it| it.next())
-        .filter(|&w| w != 0)
-    {
+    match active_window(&conn, root)? {
         Some(window) => Ok(Window { window }),
         None => Err(X11Error::NoActiveWindow),
     }
