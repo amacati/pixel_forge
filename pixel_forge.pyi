@@ -65,6 +65,9 @@ class Monitor:
 
         Args:
             id: The monitor ID. If None, the primary monitor is selected. Monitor IDs start at 1.
+
+        Raises:
+            RuntimeError: The ID is lower than one, or no monitor with that ID exists.
         """
 
     @property
