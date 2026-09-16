@@ -1,55 +1,59 @@
-// This code has been adapted from https://github.com/NiiightmareXD/windows-capture
-
 use std::cell::Cell;
-use std::mem;
 use std::sync::Arc;
-use std::thread::{self, sleep, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
-use windows::core::{IInspectable, Interface};
+use numpy::{PyArray3, PyArrayMethods};
+use parking_lot::{Condvar, Mutex};
+
+use windows::core::{IInspectable, Interface, Ref};
 use windows::Foundation::TypedEventHandler;
-use windows_future::AsyncActionCompletedHandler;
-use windows::Graphics::Capture::{Direct3D11CaptureFramePool, GraphicsCaptureItem};
+use windows::Graphics::Capture::{
+    Direct3D11CaptureFrame, Direct3D11CaptureFramePool, GraphicsCaptureItem, GraphicsCaptureSession,
+};
 use windows::Graphics::DirectX::DirectXPixelFormat;
-use windows::Win32::Foundation::{LPARAM, WPARAM};
+use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
 use windows::Win32::Graphics::Direct3D11::{ID3D11Texture2D, D3D11_TEXTURE2D_DESC};
-use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::System::WinRT::Direct3D11::IDirect3DDxgiInterfaceAccess;
-use windows::Win32::System::WinRT::{
-    CreateDispatcherQueueController, DispatcherQueueOptions, RoInitialize, RoUninitialize,
-    DQTAT_COM_NONE, DQTYPE_THREAD_CURRENT, RO_INIT_MULTITHREADED,
-};
-use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, GetMessageW, PostQuitMessage, PostThreadMessageW, TranslateMessage, MSG,
-    WM_QUIT,
-};
+use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
 
-use numpy::ndarray::{self, s};
-use numpy::PyArray3;
-use numpy::ToPyArray;
-use parking_lot::Mutex;
+use super::direct_x::{create_d3d_device, create_direct3d_device};
+use super::frame::Readback;
+use super::monitor::Monitor;
+use super::window::Window;
 
-use super::capture_utils::{CaptureTarget, ColorFormat};
-use super::direct_x::{create_d3d_device, create_direct3d_device, DirectXError, SendDirectX};
-use super::frame::{Frame, FrameError};
+/// Return RGBA so we don't have to shuffle channels ourselves.
+const PIXEL_FORMAT: DirectXPixelFormat = DirectXPixelFormat::R8G8B8A8UIntNormalized;
+
+/// We need two surfaces so the compositor has one to draw into while we hold the latest one.
+const BUFFERS: i32 = 2;
+
+const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(thiserror::Error, Debug)]
 pub enum CaptureError {
-    #[error("No frame available yet.")]
+    #[error("No frame available yet")]
     NoFrameAvailable,
-    #[error("Windows error during Capture.")]
-    WindowsError(#[from] windows::core::Error),
-    #[error("DirectX error during Capture.")]
-    DirectXError(#[from] DirectXError),
-    #[error("Frame could not be materialized.")]
-    FrameConversionError(#[from] FrameError),
-    #[error("Capture thread exited unexpectedly with an error.")]
-    CaptureThreadError,
-    #[error("Invalid capture target.")]
+    #[error("No frame arrived within {FIRST_FRAME_TIMEOUT:?}")]
+    FirstFrameTimeout,
+    #[error("Capture is not running")]
+    NotRunning,
+    #[error("Invalid capture target")]
     InvalidCaptureTarget,
+    #[error("Failed to create a DirectX device")]
+    NoDirectXDevice,
+    #[error("Failed to create a staging texture")]
+    NoStagingTexture,
+    #[error("Frame buffer is not contiguous: {0}")]
+    NotContiguous(#[from] numpy::AsSliceError),
+    #[error("Windows API error: {0}")]
+    WindowsError(#[from] windows::core::Error),
+    #[error(transparent)]
+    Monitor(#[from] super::monitor::MonitorError),
+    #[error(transparent)]
+    Window(#[from] super::window::WindowError),
 }
 
 impl From<CaptureError> for PyErr {
@@ -58,40 +62,61 @@ impl From<CaptureError> for PyErr {
     }
 }
 
-/// Capture class to capture frames from a monitor or a window.
+#[derive(FromPyObject)]
+pub enum CaptureTarget {
+    Monitor(Monitor),
+    Window(Window),
+}
+
+impl TryFrom<CaptureTarget> for GraphicsCaptureItem {
+    type Error = CaptureError;
+
+    fn try_from(target: CaptureTarget) -> Result<Self, Self::Error> {
+        Ok(match target {
+            CaptureTarget::Monitor(monitor) => monitor.try_into()?,
+            CaptureTarget::Window(window) => window.try_into()?,
+        })
+    }
+}
+
+/// Store the newest frame to prevent the compositor from checking it back into the pool while we
+/// may want to read it.
+#[derive(Default)]
+struct Latest {
+    frame: Mutex<Option<Direct3D11CaptureFrame>>,
+    arrived: Condvar,
+}
+
+struct Session {
+    pool: Direct3D11CaptureFramePool,
+    capture: GraphicsCaptureSession,
+    token: i64,
+    latest: Arc<Latest>,
+    readback: Mutex<Readback>,
+}
+
+/// Capture frames from a window or a monitor.
 ///
 /// The idea is to get either a :class:`.Monitor` or a :class:`.Window` as target, create a Capture
-/// object, and then start a capture thread that will update the internal frame of the Capture
-/// object whenever a new frame is available. Frames are only materialized, converted to NumPy
-/// arrays and passed over to Python when the user requests it to avoid unnecessary copies.
+/// object, and then start a capture that tracks the latest frame. Frames are only read back from
+/// the GPU and converted to NumPy arrays when the user asks for them, to avoid unnecessary copies.
 #[pyclass]
 pub struct Capture {
-    thread: Option<JoinHandle<Result<(), CaptureError>>>,
-    thread_id: Arc<Mutex<Option<u32>>>,
-    frame: Arc<Mutex<Option<Frame>>>,
+    session: Option<Session>,
 }
 
 #[pymethods]
 impl Capture {
     #[new]
-    pub fn new() -> Self {
-        Self {
-            thread: None,
-            thread_id: Arc::new(Mutex::new(None)),
-            frame: Arc::new(Mutex::new(None)),
-        }
+    pub const fn new() -> Self {
+        Self { session: None }
     }
 
     /// Start the capture.
     ///
-    /// This registeres an event handler that automatically updates the latest frame whenever a new
-    /// frame is available. The frame can be accessed using :meth:`frame`. Since the event handler
-    /// runs in a separate thread, the first frame might not be available immediately. To ensure a
-    /// frame is available before continuing, set ``await_first_frame`` to True. This will block the
-    /// main thread until the first frame is available.
-    ///
-    /// .. note::
-    ///    You have to call :meth:`start` before any frames become available.
+    /// Frames arrive on a capture worker thread and can be read with :meth:`frame`. The first frame
+    /// is not available immediately, so :meth:`start` waits for it unless ``await_first_frame`` is
+    /// False.
     ///
     /// Args:
     ///     capture_target: The :class:`.Monitor` or :class:`.Window` to capture.
@@ -102,201 +127,167 @@ impl Capture {
         capture_target: CaptureTarget,
         await_first_frame: Option<bool>,
     ) -> Result<(), CaptureError> {
-        // In case of a window capture, check if the window is valid
-        match capture_target {
-            CaptureTarget::Window(window) => {
-                if !window.valid() {
-                    return Err(CaptureError::InvalidCaptureTarget);
-                }
+        self.stop();
+        if let CaptureTarget::Window(window) = capture_target {
+            if !window.valid() {
+                return Err(CaptureError::InvalidCaptureTarget);
             }
-            CaptureTarget::Monitor(_) => {}
         }
-        let gc_item: GraphicsCaptureItem = capture_target
-            .try_into()
-            .expect("Failed to convert CaptureTarget to GraphicsCaptureItem");
-
-        self.thread_id.lock().take(); // Clear the thread_id when starting a new capture
-
-        // Clone Arc capture struct members to use them in thread without borrowing
-        let thread_id = self.thread_id.clone();
-        let frame = self.frame.clone();
-
-        // Create a thread to run the capture
-        let capture_thread = thread::spawn(move || -> Result<(), CaptureError> {
-            unsafe {
-                RoInitialize(RO_INIT_MULTITHREADED)?; // Initialize the Windows Runtime
-            };
-            // Create a dispatcher queue for the current thread
-            let options = DispatcherQueueOptions {
-                dwSize: u32::try_from(mem::size_of::<DispatcherQueueOptions>()).unwrap(),
-                threadType: DQTYPE_THREAD_CURRENT,
-                apartmentType: DQTAT_COM_NONE,
-            };
-            let controller = unsafe { CreateDispatcherQueueController(options)? };
-
-            // Create DirectX devices
-            let (d3d_device, d3d_device_context) = create_d3d_device()?;
-            let direct3d_device = create_direct3d_device(&d3d_device)?;
-            // Create frame pool and an associated capture session
-            let pixel_format = DirectXPixelFormat(ColorFormat::default() as i32);
-            let frame_pool = Arc::new(Direct3D11CaptureFramePool::Create(
-                &direct3d_device,
-                pixel_format,
-                1,
-                gc_item.Size()?,
-            )?);
-            let session = frame_pool.CreateCaptureSession(&gc_item)?;
-
-            // Set frame pool frame arrived event
-            let frame_arrived_event_token = frame_pool.FrameArrived(&TypedEventHandler::<
-                Direct3D11CaptureFramePool,
-                IInspectable,
-            >::new({
-                thread_id.lock().replace(unsafe { GetCurrentThreadId() });
-                let frame_pool = frame_pool.clone();
-                let d3d_device = d3d_device.clone();
-                let context = d3d_device_context.clone();
-                let capture_frame = frame.clone();
-
-                let last_size = Cell::new(gc_item.Size()?);
-                let direct3d_device_recreate = SendDirectX::new(direct3d_device.clone());
-
-                move |frame, _| {
-                    // Get frame
-                    let frame = frame
-                        .as_ref()
-                        .expect("FrameArrived parameter unexpectedly returned None.")
-                        .TryGetNextFrame()?;
-                    // Get frame time, content size and surface
-                    let frame_content_size = frame.ContentSize()?;
-                    let frame_surface = frame.Surface()?;
-                    // Convert surface to texture
-                    let frame_dxgi_interface =
-                        frame_surface.cast::<IDirect3DDxgiInterfaceAccess>()?;
-                    let frame_texture =
-                        unsafe { frame_dxgi_interface.GetInterface::<ID3D11Texture2D>()? };
-
-                    // Get texture settings
-                    let mut desc = D3D11_TEXTURE2D_DESC::default();
-                    unsafe { frame_texture.GetDesc(&mut desc) }
-
-                    // Check if the size has been changed, and recreate the frame pool if necessary
-                    if frame_content_size != last_size.get() {
-                        let direct3d_device_recreate = &direct3d_device_recreate;
-                        frame_pool.Recreate(
-                            &direct3d_device_recreate.0,
-                            pixel_format,
-                            1,
-                            frame_content_size,
-                        )?;
-                        last_size.set(frame_content_size);
-                        return Ok(());
-                    }
-                    // Set width & height
-                    let texture_width = desc.Width;
-                    let texture_height = desc.Height;
-                    // Create a frame
-                    *capture_frame.lock() = Some(Frame::new(
-                        frame_texture,
-                        texture_height,
-                        texture_width,
-                        d3d_device.clone(),
-                        context.clone(),
-                    ));
-                    Result::Ok(())
+        init_winrt()?;
+        let item: GraphicsCaptureItem = capture_target.try_into()?;
+        let (device, context) = create_d3d_device()?;
+        let size = item.Size()?;
+        // A free threaded pool raises FrameArrived on its own worker thread, which spares us a
+        // dedicated thread running a Win32 message pump just to service a dispatcher queue.
+        let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
+            &create_direct3d_device(&device)?,
+            PIXEL_FORMAT,
+            BUFFERS,
+            size,
+        )?;
+        let latest = Arc::new(Latest::default());
+        let token = pool.FrameArrived(&TypedEventHandler::new({
+            let (latest, device) = (Arc::clone(&latest), device.clone());
+            let pool_size = Mutex::new(size);
+            move |pool: Ref<Direct3D11CaptureFramePool>, _: Ref<IInspectable>| {
+                let pool = pool.ok()?;
+                let frame = pool.TryGetNextFrame()?;
+                let content = frame.ContentSize()?;
+                latest.frame.lock().replace(frame);
+                latest.arrived.notify_all();
+                // The pool's surfaces keep the size they were created with, so grow them if the
+                // target outgrows them.
+                let mut pool_size = pool_size.lock();
+                if content.Width > pool_size.Width || content.Height > pool_size.Height {
+                    pool.Recreate(
+                        &create_direct3d_device(&device)?,
+                        PIXEL_FORMAT,
+                        BUFFERS,
+                        content,
+                    )?;
+                    *pool_size = content;
                 }
-            }))?;
-            session.StartCapture()?;
-
-            // Create message loops. Pump messages while the message is not WM_QUIT
-            let mut msg = MSG::default();
-            unsafe {
-                while GetMessageW(&mut msg, None, 0, 0).as_bool() {
-                    let _ = TranslateMessage(&msg);
-                    DispatchMessageW(&msg);
-                }
+                Ok(())
             }
-            // Shutdown dispatcher queue
-            let async_shutdown = controller.ShutdownQueueAsync()?;
-            async_shutdown.SetCompleted(&AsyncActionCompletedHandler::new(
-                move |_, _| -> Result<(), windows::core::Error> {
-                    unsafe { PostQuitMessage(0) };
-                    Ok(())
-                },
-            ))?;
-
-            // Remove event handlers and close the frame pool and capture session
-            frame_pool
-                .RemoveFrameArrived(frame_arrived_event_token)
-                .expect("Failed to remove Frame Arrived event handler");
-            frame_pool.Close().expect("Failed to Close Frame Pool");
-            session.Close().expect("Failed to Close Capture Session");
-            unsafe { RoUninitialize() };
-            Ok(())
+        }))?;
+        let capture = pool.CreateCaptureSession(&item)?;
+        capture.StartCapture()?;
+        let readback = Mutex::new(Readback::new(device, context));
+        self.session = Some(Session {
+            pool,
+            capture,
+            token,
+            latest,
+            readback,
         });
-        self.thread = Some(capture_thread);
-
-        // Wait for the first frame to be ready if await_first_frame is set to true or None
         if await_first_frame.unwrap_or(true) {
-            while self.frame.lock().is_none() && self.thread.is_some() {
-                sleep(Duration::from_millis(10));
-            }
+            self.await_first_frame()?;
         }
         Ok(())
     }
 
-    /// :``bool``: True if the capture thread is running, False otherwise.
+    /// :``bool``: True if a capture is running.
     #[getter]
-    pub fn active(&self) -> bool {
-        self.thread.is_some()
+    pub const fn active(&self) -> bool {
+        self.session.is_some()
     }
 
-    /// Stop the capture thread, wait for it to join and invalidate the last frame.
+    /// Stop the capture and release the frame pool, the capture session and the last frame.
     pub fn stop(&mut self) {
-        // If the thread_id is set, send a WM_QUIT message to the message pumping thread. The
-        // message pumping thread will receive the WM_QUIT message, stop its loop and close the
-        // dispatcher queue
-        if let Some(thread_id) = self.thread_id.lock().take() {
-            let _ = unsafe { PostThreadMessageW(thread_id, WM_QUIT, WPARAM(0), LPARAM(0)) };
-        }
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join().expect("Failed to join capture thread");
-        }
-        self.frame.lock().take(); // Clear the frame when the capture is stopped
+        let Some(session) = self.session.take() else {
+            return;
+        };
+        let _ = session.capture.Close();
+        let _ = session.pool.RemoveFrameArrived(session.token);
+        let _ = session.pool.Close();
+        // A handler could still be active on a worker thread. It only touches `Arc<Latest>`, so
+        // letting it finish is safe.
+        session.latest.frame.lock().take();
     }
 
-    /// Convert the latest frame to an array and return it.
+    /// Read the latest frame back from the GPU and return it.
     ///
-    /// :returns: The frame as a 3D NumPy array with dimensions [h w 4].
+    /// Returns:
+    ///     The frame as a 3D NumPy array with dimensions [h w 4].
     #[pyo3(name = "frame")]
-    pub fn py_frame(&self, py: Python) -> PyResult<Py<PyArray3<u8>>> {
-        if self.thread.is_none() {
-            return Err(PyRuntimeError::new_err("Capture thread is not running."));
-        }
-        let frame_guard = self.frame.lock();
-        let frame = frame_guard.as_ref().ok_or(CaptureError::NoFrameAvailable)?;
-        let data = frame.materialize()?;
-        let img_array = ndarray::arr1(data);
-        // The staging texture pads each row to the driver's RowPitch, which is at least width*4
-        // bytes and results in buffer lengths of height*RowPitch. We reshape to the padded row
-        // width and crop back to the real width below.
-        let height: usize = frame.height.try_into()?;
-        let dims: [usize; 3] = [height, data.len() / height / 4, 4];
-        let img_array = img_array
-            .into_shape(dims)
-            .expect("Failed to reshape frame into the correct dimensions");
-        let width: usize = frame.width.try_into()?;
-        // Crop image into the correct dimensions and discard any borders
-        let img_array = img_array.slice(s![0..height, 0..width, ..]).to_pyarray(py);
-        Ok(img_array.unbind())
+    pub fn py_frame<'py>(&self, py: Python<'py>) -> Result<Bound<'py, PyArray3<u8>>, CaptureError> {
+        let session = self.session.as_ref().ok_or(CaptureError::NotRunning)?;
+        // Clone the frame out of the slot so that the capture thread can keep publishing. The clone
+        // keeps this surface checked out.
+        let frame = session
+            .latest
+            .frame
+            .lock()
+            .clone()
+            .ok_or(CaptureError::NoFrameAvailable)?;
+        let size = frame.ContentSize()?;
+        let access: IDirect3DDxgiInterfaceAccess = frame.Surface()?.cast()?;
+        // SAFETY: a capture frame's surface is always backed by a texture, the interface asked for
+        // here, and `access` keeps it alive for the duration of the call.
+        let texture: ID3D11Texture2D = unsafe { access.GetInterface()? };
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        // SAFETY: `texture` is the frame's backing texture and `desc` a valid out parameter.
+        unsafe { texture.GetDesc(&mut desc) };
+        // The surface is usually larger than the content. It can be briefly smaller right after the
+        // target grew, because the pool is only recreated once a frame has reported the new size,
+        // so we clamp both min and max.
+        let width = (size.Width.max(0) as u32).min(desc.Width);
+        let height = (size.Height.max(0) as u32).min(desc.Height);
+
+        // SAFETY: left uninitialised because the readback below writes every byte of it.
+        let array = unsafe { PyArray3::<u8>::new(py, [height as usize, width as usize, 4], false) };
+        // SAFETY: the array was just created and has not been handed to Python yet, so nothing else
+        // can observe its buffer while the readback fills it.
+        let dst = unsafe { array.as_slice_mut()? };
+        let readback = &session.readback;
+        py.detach(|| readback.lock().read(&texture, width, height, dst))?;
+        Ok(array)
     }
 }
 
-// Drop trait implementation to stop the capture thread when the Capture struct is dropped. This
-// trait is also executed when the Capture struct goes out of scope in Python, making sure that the
-// capture thread is stopped
+impl Capture {
+    /// Block until the capture publishes its first frame.
+    fn await_first_frame(&self) -> Result<(), CaptureError> {
+        let session = self.session.as_ref().ok_or(CaptureError::NotRunning)?;
+        let deadline = Instant::now() + FIRST_FRAME_TIMEOUT;
+        let mut frame = session.latest.frame.lock();
+        while frame.is_none() {
+            if session
+                .latest
+                .arrived
+                .wait_until(&mut frame, deadline)
+                .timed_out()
+            {
+                return Err(CaptureError::FirstFrameTimeout);
+            }
+        }
+        Ok(())
+    }
+}
+
 impl Drop for Capture {
     fn drop(&mut self) {
         self.stop();
     }
+}
+
+/// Put the calling thread into a WinRT apartment, once.
+///
+/// WinRT types can only be activated from a thread that has initialised the runtime.
+fn init_winrt() -> Result<(), CaptureError> {
+    thread_local! {
+        static INITIALIZED: Cell<bool> = const { Cell::new(false) };
+    }
+    INITIALIZED.with(|initialized| {
+        if initialized.replace(true) {
+            return Ok(());
+        }
+        // SAFETY: runs at most once per thread, and is never paired with RoUninitialize.
+        match unsafe { RoInitialize(RO_INIT_MULTITHREADED) } {
+            // The thread already joined a single-threaded apartment. WinRT activation works there
+            // too, so this is not an error.
+            Err(e) if e.code() == RPC_E_CHANGED_MODE => Ok(()),
+            result => Ok(result?),
+        }
+    })
 }

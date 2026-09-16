@@ -1,7 +1,6 @@
 //! Windows backend, built on the Windows Graphics Capture API.
 
 pub mod capture;
-mod capture_utils;
 mod direct_x;
 mod frame;
 pub mod monitor;

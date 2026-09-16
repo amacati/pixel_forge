@@ -1,111 +1,158 @@
-// This code has been adapted from https://github.com/NiiightmareXD/windows-capture
-
 use std::slice;
 
-use pyo3::exceptions::PyRuntimeError;
-use pyo3::prelude::*;
-
 use windows::Win32::Graphics::Direct3D11::{
-    ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D, D3D11_CPU_ACCESS_READ,
-    D3D11_CPU_ACCESS_WRITE, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ_WRITE, D3D11_TEXTURE2D_DESC,
-    D3D11_USAGE_STAGING,
+    ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D, D3D11_BOX, D3D11_CPU_ACCESS_READ,
+    D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
 };
-use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT, DXGI_SAMPLE_DESC};
+use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC};
 
+use super::capture::CaptureError;
 
-use super::capture_utils::ColorFormat;
-
-#[derive(thiserror::Error, Debug)]
-pub enum FrameError {
-    #[error("Conversion to vector failed.")]
-    FrameConversionFailed,
-    #[error("Windows error during frame conversion")]
-    FrameConversionWindowsError(#[from] windows::core::Error),
-}
-
-impl From<FrameError> for PyErr {
-    fn from(error: FrameError) -> PyErr {
-        PyRuntimeError::new_err(error.to_string())
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Frame {
-    // Texture properties
-    frame_texture: ID3D11Texture2D,
-    pub height: u32,
-    pub width: u32,
-    // Conversion devices
-    d3d_device: ID3D11Device,
+/// Read capture frames back from the GPU into CPU memory.
+///
+/// The staging texture is allocated once and reused for every frame. D3D11 defers resource
+/// destruction, and freed textures otherwise pile up in the graphics kernel's paged pool. It is
+/// only rebuilt when the capture target resizes.
+pub struct Readback {
+    device: ID3D11Device,
     context: ID3D11DeviceContext,
+    staging: Option<Staging>,
 }
 
-impl Frame {
-    pub fn new(
-        frame_texture: ID3D11Texture2D,
-        height: u32,
-        width: u32,
-        d3d_device: ID3D11Device,
-        context: ID3D11DeviceContext,
-    ) -> Self {
+struct Staging {
+    texture: ID3D11Texture2D,
+    width: u32,
+    height: u32,
+}
+
+impl Readback {
+    pub const fn new(device: ID3D11Device, context: ID3D11DeviceContext) -> Self {
         Self {
-            frame_texture,
-            height,
-            width,
-            d3d_device,
+            device,
             context,
+            staging: None,
         }
     }
 
-    pub fn materialize(&self) -> Result<&[u8], FrameError> {
-        // Create a texture that CPU can read
-        let texture_desc = D3D11_TEXTURE2D_DESC {
-            Width: self.width,
-            Height: self.height,
-            MipLevels: 1,
-            ArraySize: 1,
-            Format: DXGI_FORMAT(ColorFormat::default() as i32),
-            SampleDesc: DXGI_SAMPLE_DESC {
-                Count: 1,
-                Quality: 0,
-            },
-            Usage: D3D11_USAGE_STAGING,
-            BindFlags: 0,
-            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32 | D3D11_CPU_ACCESS_WRITE.0 as u32,
-            MiscFlags: 0,
+    /// Copy the top-left [`width`, `height`] region of `source` into `dst` as RGBA rows
+    pub fn read(
+        &mut self,
+        source: &ID3D11Texture2D,
+        width: u32,
+        height: u32,
+        dst: &mut [u8],
+    ) -> Result<(), CaptureError> {
+        let staging = self.staging(width, height)?;
+        let region = D3D11_BOX {
+            left: 0,
+            top: 0,
+            front: 0,
+            right: width,
+            bottom: height,
+            back: 1,
         };
-
-        let mut texture = None;
+        // SAFETY: `staging` and `source` are both live textures of the same format, and `region`
+        // lies within `source` because the frame pool surface is never smaller than the content.
+        // Subresource 0 is the only subresource of either texture.
         unsafe {
-            self.d3d_device
-                .CreateTexture2D(&texture_desc, None, Some(&mut texture))?;
+            self.context
+                .CopySubresourceRegion(&staging, 0, 0, 0, 0, source, 0, Some(&region))
         };
-        let texture = texture.unwrap();
+        Mapped::new(&self.context, &staging)?.unpack(dst, width as usize, height as usize);
+        Ok(())
+    }
 
-        // Copy the real texture to copy texture
-        unsafe {
-            self.context.CopyResource(&texture, &self.frame_texture);
-        };
+    /// The cached staging texture, rebuilt if the target resized since the last frame.
+    fn staging(&mut self, width: u32, height: u32) -> Result<ID3D11Texture2D, CaptureError> {
+        if !matches!(&self.staging, Some(s) if s.width == width && s.height == height) {
+            let desc = D3D11_TEXTURE2D_DESC {
+                Width: width,
+                Height: height,
+                MipLevels: 1,
+                ArraySize: 1,
+                Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                SampleDesc: DXGI_SAMPLE_DESC {
+                    Count: 1,
+                    Quality: 0,
+                },
+                Usage: D3D11_USAGE_STAGING,
+                // Read access only. A CPU-writable mapping can land in write-combined memory, which
+                // is super slow to read back from.
+                CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+                ..Default::default()
+            };
+            let mut texture = None;
+            // SAFETY: `desc` is a fully initialised staging description and `texture` is a valid
+            // out parameter.
+            unsafe {
+                self.device
+                    .CreateTexture2D(&desc, None, Some(&mut texture))?
+            };
+            let texture = texture.ok_or(CaptureError::NoStagingTexture)?;
+            self.staging = Some(Staging {
+                texture,
+                width,
+                height,
+            });
+        }
+        Ok(self
+            .staging
+            .as_ref()
+            .expect("staging texture exists")
+            .texture
+            .clone())
+    }
+}
 
-        // Map the texture to enable CPU access
-        let mut mapped_resource = D3D11_MAPPED_SUBRESOURCE::default();
-        unsafe {
-            self.context.Map(
-                &texture,
-                0,
-                D3D11_MAP_READ_WRITE,
-                0,
-                Some(&mut mapped_resource),
-            )?;
-        };
+/// A mapped staging texture.
+///
+/// D3D11 denies the GPU access to a resource between `Map` and `Unmap`, so we ensure Unmap is
+/// called by putting it into `Drop`.
+struct Mapped<'a> {
+    context: &'a ID3D11DeviceContext,
+    texture: &'a ID3D11Texture2D,
+    resource: D3D11_MAPPED_SUBRESOURCE,
+}
 
-        // Get the mapped resource data slice
-        let frame_data: &[u8] = unsafe {
-            slice::from_raw_parts_mut(
-                mapped_resource.pData.cast(),
-                (self.height * mapped_resource.RowPitch) as usize,
-            )
-        };
-        Ok(frame_data)
+impl<'a> Mapped<'a> {
+    fn new(
+        context: &'a ID3D11DeviceContext,
+        texture: &'a ID3D11Texture2D,
+    ) -> Result<Self, CaptureError> {
+        let mut resource = D3D11_MAPPED_SUBRESOURCE::default();
+        // SAFETY: `texture` is a staging texture created with D3D11_CPU_ACCESS_READ, so a read map
+        // is permitted. Subresource 0 is its only subresource, and `resource` is a valid out
+        // parameter. The matching Unmap happens in `Drop`.
+        unsafe { context.Map(texture, 0, D3D11_MAP_READ, 0, Some(&mut resource))? };
+        Ok(Self {
+            context,
+            texture,
+            resource,
+        })
+    }
+
+    /// Copy `height` rows of `width` pixels into `dst`, dropping the driver's row padding.
+    fn unpack(&self, dst: &mut [u8], width: usize, height: usize) {
+        let pitch = self.resource.RowPitch as usize;
+        let row = width * 4;
+        // SAFETY: the mapping covers `height` rows of `pitch` bytes and stays valid until this
+        // guard drops, which happens after the copy below.
+        let src =
+            unsafe { slice::from_raw_parts(self.resource.pData.cast::<u8>(), pitch * height) };
+        if pitch == row {
+            dst.copy_from_slice(src); // No padding, so the rows are already contiguous
+            return;
+        }
+        for (dst, src) in dst.chunks_exact_mut(row).zip(src.chunks_exact(pitch)) {
+            dst.copy_from_slice(&src[..row]);
+        }
+    }
+}
+
+impl Drop for Mapped<'_> {
+    fn drop(&mut self) {
+        // SAFETY: `new` mapped this exact texture and subresource, and a guard is only built on a
+        // successful map, so this is the single matching unmap.
+        unsafe { self.context.Unmap(self.texture, 0) };
     }
 }

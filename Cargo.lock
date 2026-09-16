@@ -172,7 +172,6 @@ dependencies = [
  "pyo3",
  "thiserror",
  "windows",
- "windows-future",
  "x11rb",
 ]
 
