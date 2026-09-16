@@ -5,6 +5,12 @@ on:
   push:
     tags: ['*']
   workflow_dispatch:
+    inputs:
+      repository:
+        description: Index to publish to
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
 
 permissions:
   contents: read
@@ -25,7 +31,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --find-interpreter
+          args: --release --out dist
           sccache: 'true'
           manylinux: auto
       - name: Upload wheels
@@ -51,7 +57,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --find-interpreter
+          args: --release --out dist
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -74,17 +80,25 @@ jobs:
           name: wheels-sdist
           path: dist
 
+  test:
+    uses: ./.github/workflows/CI.yml  # Releases must pass CI first.
+
+  # Tags publish to pypi. Manual run publish to test-pypi unless requested otherwise. Authentication
+  # is OIDC
   release:
-    name: Publish to PyPI
+    name: Publish
     runs-on: ubuntu-latest
-    if: "startsWith(github.ref, 'refs/tags/')"
-    needs: [linux, windows, sdist]
+    needs: [test, linux, windows, sdist]
+    permissions:
+      id-token: write
     steps:
       - uses: actions/download-artifact@v4
-      - name: Publish to PyPI
-        uses: PyO3/maturin-action@v1
-        env:
-          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         with:
-          command: upload
-          args: --non-interactive --skip-existing wheels-*/*
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: ${{ inputs.repository == 'testpypi' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
+          skip-existing: true
