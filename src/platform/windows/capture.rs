@@ -293,15 +293,20 @@ fn init_winrt() -> Result<(), CaptureError> {
         static INITIALIZED: Cell<bool> = const { Cell::new(false) };
     }
     INITIALIZED.with(|initialized| {
-        if initialized.replace(true) {
+        if initialized.get() {
             return Ok(());
         }
         // SAFETY: runs at most once per thread, and is never paired with RoUninitialize.
-        match unsafe { RoInitialize(RO_INIT_MULTITHREADED) } {
-            // The thread already joined a single-threaded apartment. WinRT activation works there
-            // too, so this is not an error.
-            Err(e) if e.code() == RPC_E_CHANGED_MODE => Ok(()),
-            result => Ok(result?),
+        // The thread may already have joined a single-threaded apartment. WinRT activation works
+        // there too, so that is not an error.
+        if let Err(e) = unsafe { RoInitialize(RO_INIT_MULTITHREADED) }
+            && e.code() != RPC_E_CHANGED_MODE
+        {
+            return Err(e.into());
         }
+        // Only mark the thread once the apartment is up, so a failure is retried on the next call
+        // instead of leaving the thread flagged as initialised.
+        initialized.set(true);
+        Ok(())
     })
 }
