@@ -47,3 +47,19 @@ jobs:
           xclock &
           sleep 1
           pytest -v
+
+  # Run the Python test suite on Windows.
+  # The Windows Graphics Capture backend needs a real desktop with at least one window
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build and install the extension
+        shell: bash
+        run: pip install '.[test]'
+      - name: Run tests
+        shell: bash
+        run: pytest -v
