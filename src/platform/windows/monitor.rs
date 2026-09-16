@@ -2,7 +2,6 @@
 
 use std::ffi::c_void;
 use std::num::ParseIntError;
-use std::ptr;
 
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -165,7 +164,7 @@ impl Monitor {
             },
             ..MONITORINFOEXW::default()
         };
-        let info_ptr = ptr::addr_of_mut!(monitor_info).cast();
+        let info_ptr = (&raw mut monitor_info).cast();
         // SAFETY: GetMonitorInfoW writes at most `cbSize` bytes, which we set to the true size of
         // MONITORINFOEXW. The API expects the extended struct through a MONITORINFO pointer, and
         // `monitor_info` stays alive for the whole call. The handle validated and then only read
@@ -252,7 +251,7 @@ pub fn enumerate_monitors() -> Result<Vec<Monitor>, MonitorError> {
             None,
             None,
             Some(enum_monitors_callback),
-            LPARAM(ptr::addr_of_mut!(monitors) as isize),
+            LPARAM(&raw mut monitors as isize),
         )
         .ok()?;
     }

@@ -64,43 +64,42 @@ impl Readback {
 
     /// The cached staging texture, rebuilt if the target resized since the last frame.
     fn staging(&mut self, width: u32, height: u32) -> Result<ID3D11Texture2D, CaptureError> {
-        if !matches!(&self.staging, Some(s) if s.width == width && s.height == height) {
-            let desc = D3D11_TEXTURE2D_DESC {
-                Width: width,
-                Height: height,
-                MipLevels: 1,
-                ArraySize: 1,
-                Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                SampleDesc: DXGI_SAMPLE_DESC {
-                    Count: 1,
-                    Quality: 0,
-                },
-                Usage: D3D11_USAGE_STAGING,
-                // Read access only. A CPU-writable mapping can land in write-combined memory, which
-                // is super slow to read back from.
-                CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-                ..Default::default()
-            };
-            let mut texture = None;
-            // SAFETY: `desc` is a fully initialised staging description and `texture` is a valid
-            // out parameter.
-            unsafe {
-                self.device
-                    .CreateTexture2D(&desc, None, Some(&mut texture))?
-            };
-            let texture = texture.ok_or(CaptureError::NoStagingTexture)?;
-            self.staging = Some(Staging {
-                texture,
-                width,
-                height,
-            });
+        if let Some(s) = &self.staging
+            && s.width == width
+            && s.height == height
+        {
+            return Ok(s.texture.clone());
         }
-        Ok(self
-            .staging
-            .as_ref()
-            .expect("staging texture exists")
-            .texture
-            .clone())
+        let desc = D3D11_TEXTURE2D_DESC {
+            Width: width,
+            Height: height,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_STAGING,
+            // Read access only. A CPU-writable mapping can land in write-combined memory, which
+            // is super slow to read back from.
+            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+            ..Default::default()
+        };
+        let mut texture = None;
+        // SAFETY: `desc` is a fully initialised staging description and `texture` is a valid
+        // out parameter.
+        unsafe {
+            self.device
+                .CreateTexture2D(&desc, None, Some(&mut texture))?
+        };
+        let texture = texture.ok_or(CaptureError::NoStagingTexture)?;
+        self.staging = Some(Staging {
+            texture: texture.clone(),
+            width,
+            height,
+        });
+        Ok(texture)
     }
 }
 

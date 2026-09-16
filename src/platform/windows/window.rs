@@ -1,7 +1,6 @@
 // This code has been adapted from https://github.com/NiiightmareXD/windows-capture
 
 use std::ffi::c_void;
-use std::ptr;
 
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -181,7 +180,7 @@ pub fn enumerate_windows() -> Result<Vec<Window>, WindowError> {
         EnumChildWindows(
             Some(GetDesktopWindow()),
             Some(enum_windows_callback),
-            LPARAM(ptr::addr_of_mut!(windows) as isize),
+            LPARAM(&raw mut windows as isize),
         )
         .ok()?;
     }

@@ -136,10 +136,10 @@ impl Capture {
         await_first_frame: Option<bool>,
     ) -> Result<(), CaptureError> {
         self.stop();
-        if let CaptureTarget::Window(window) = capture_target {
-            if !window.valid() {
-                return Err(CaptureError::InvalidCaptureTarget);
-            }
+        if let CaptureTarget::Window(window) = capture_target
+            && !window.valid()
+        {
+            return Err(CaptureError::InvalidCaptureTarget);
         }
         init_winrt()?;
         let item: GraphicsCaptureItem = capture_target.try_into()?;
