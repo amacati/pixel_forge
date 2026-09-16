@@ -12,7 +12,6 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT, DXGI_SAMPLE_DESC};
 
-use windows_result::Error as WindowsError;
 
 use super::capture_utils::ColorFormat;
 
@@ -21,7 +20,7 @@ pub enum FrameError {
     #[error("Conversion to vector failed.")]
     FrameConversionFailed,
     #[error("Windows error during frame conversion")]
-    FrameConversionWindowsError(#[from] WindowsError),
+    FrameConversionWindowsError(#[from] windows::core::Error),
 }
 
 impl From<FrameError> for PyErr {

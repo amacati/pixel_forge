@@ -1,14 +1,15 @@
 // This code has been adapted from https://github.com/NiiightmareXD/windows-capture
 
+use std::ffi::c_void;
 use std::ptr;
 use std::string::FromUtf16Error;
 
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
-use windows::core::HSTRING;
+use windows::core::{BOOL, HSTRING};
 use windows::Graphics::Capture::GraphicsCaptureItem;
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE};
+use windows::Win32::Foundation::{HWND, LPARAM, RECT, TRUE};
 use windows::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONULL};
 use windows::Win32::System::Threading::GetCurrentProcessId;
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
@@ -46,7 +47,7 @@ impl From<WindowError> for PyErr {
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
 #[pyclass(from_py_object)]
 pub struct Window {
-    window_handle: HWND,
+    window_handle: isize,
 }
 
 #[pymethods]
@@ -64,33 +65,30 @@ impl Window {
     #[new]
     pub fn new(name: &str) -> Result<Window, WindowError> {
         let hstring_name = HSTRING::from(name);
-        let window_handle = unsafe { FindWindowW(None, &hstring_name) };
+        let window_handle = unsafe { FindWindowW(None, &hstring_name) }
+            .map_err(|_| WindowError::NotFound(String::from(name)))?;
 
-        if window_handle.0 == 0 {
-            return Err(WindowError::NotFound(String::from(name)));
-        }
-
-        Ok(Window { window_handle })
+        Ok(Self::from_handle(window_handle))
     }
 
     /// :``bool``: True if the window is still valid (i.e., open), else False.
     #[getter]
     pub fn valid(&self) -> bool {
-        if !unsafe { IsWindowVisible(self.window_handle).as_bool() } {
+        if !unsafe { IsWindowVisible(self.as_handle()).as_bool() } {
             return false;
         }
 
         let mut id = 0;
-        unsafe { GetWindowThreadProcessId(self.window_handle, Some(&mut id)) };
+        unsafe { GetWindowThreadProcessId(self.as_handle(), Some(&mut id)) };
         if id == unsafe { GetCurrentProcessId() } {
             return false;
         }
 
         let mut rect = RECT::default();
-        let result = unsafe { GetClientRect(self.window_handle, &mut rect) };
+        let result = unsafe { GetClientRect(self.as_handle(), &mut rect) };
         if result.is_ok() {
-            let styles = unsafe { GetWindowLongPtrW(self.window_handle, GWL_STYLE) };
-            let ex_styles = unsafe { GetWindowLongPtrW(self.window_handle, GWL_EXSTYLE) };
+            let styles = unsafe { GetWindowLongPtrW(self.as_handle(), GWL_STYLE) };
+            let ex_styles = unsafe { GetWindowLongPtrW(self.as_handle(), GWL_EXSTYLE) };
 
             if (ex_styles & isize::try_from(WS_EX_TOOLWINDOW.0).unwrap()) != 0 {
                 return false;
@@ -108,11 +106,11 @@ impl Window {
     /// :``str``: The name string of the window.
     #[getter]
     pub fn name(&self) -> Result<String, WindowError> {
-        let len = unsafe { GetWindowTextLengthW(self.window_handle) };
+        let len = unsafe { GetWindowTextLengthW(self.as_handle()) };
 
         let mut name = vec![0u16; usize::try_from(len).unwrap() + 1];
         if len >= 1 {
-            let copied = unsafe { GetWindowTextW(self.window_handle, &mut name) };
+            let copied = unsafe { GetWindowTextW(self.as_handle(), &mut name) };
             if copied == 0 {
                 return Ok(String::new());
             }
@@ -138,8 +136,8 @@ impl Window {
     ///
     /// * `window_handle` - The raw window handle (HWND).
     #[must_use]
-    pub const fn from_handle(window_handle: HWND) -> Window {
-        Window { window_handle }
+    pub fn from_handle(window_handle: HWND) -> Window {
+        Window { window_handle: window_handle.0 as isize }
     }
 
     /// Get the monitor that has the largest area of intersection with the window.
@@ -149,7 +147,7 @@ impl Window {
     /// `None` if the window doesn't intersect with any monitor.
     #[must_use]
     pub fn monitor(&self) -> Option<Monitor> {
-        let monitor = unsafe { MonitorFromWindow(self.window_handle, MONITOR_DEFAULTTONULL) };
+        let monitor = unsafe { MonitorFromWindow(self.as_handle(), MONITOR_DEFAULTTONULL) };
 
         if monitor.is_invalid() {
             None
@@ -160,8 +158,8 @@ impl Window {
 
     /// Return the window handle (HWND) of the window.
     #[must_use]
-    pub const fn as_handle(&self) -> HWND {
-        self.window_handle
+    pub fn as_handle(&self) -> HWND {
+        HWND(self.window_handle as *mut c_void)
     }
 }
 
@@ -169,7 +167,7 @@ impl Window {
 unsafe extern "system" fn enum_windows_callback(window_handle: HWND, vec: LPARAM) -> BOOL {
     let windows = &mut *(vec.0 as *mut Vec<Window>);
 
-    let window = Window { window_handle }; // Not yet confirmed to be valid
+    let window = Window::from_handle(window_handle); // Not yet confirmed to be valid
     if window.valid() {
         windows.push(window);
     }
@@ -190,7 +188,7 @@ pub fn enumerate_windows() -> Result<Vec<Window>, WindowError> {
 
     unsafe {
         EnumChildWindows(
-            GetDesktopWindow(),
+            Some(GetDesktopWindow()),
             Some(enum_windows_callback),
             LPARAM(ptr::addr_of_mut!(windows) as isize),
         )
@@ -211,11 +209,11 @@ pub fn enumerate_windows() -> Result<Vec<Window>, WindowError> {
 pub fn foreground_window() -> Result<Window, WindowError> {
     let window_handle = unsafe { GetForegroundWindow() };
 
-    if window_handle.0 == 0 {
+    if window_handle.0.is_null() {
         return Err(WindowError::NoActiveWindow);
     }
 
-    Ok(Window { window_handle })
+    Ok(Window::from_handle(window_handle))
 }
 
 // Window to GraphicsCaptureItem conversion

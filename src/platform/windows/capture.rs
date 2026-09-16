@@ -1,5 +1,6 @@
 // This code has been adapted from https://github.com/NiiightmareXD/windows-capture
 
+use std::cell::Cell;
 use std::mem;
 use std::sync::Arc;
 use std::thread::{self, sleep, JoinHandle};
@@ -9,8 +10,8 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
 use windows::core::{IInspectable, Interface};
-use windows::Foundation::AsyncActionCompletedHandler;
 use windows::Foundation::TypedEventHandler;
+use windows_future::AsyncActionCompletedHandler;
 use windows::Graphics::Capture::{Direct3D11CaptureFramePool, GraphicsCaptureItem};
 use windows::Graphics::DirectX::DirectXPixelFormat;
 use windows::Win32::Foundation::{LPARAM, WPARAM};
@@ -25,7 +26,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, PostQuitMessage, PostThreadMessageW, TranslateMessage, MSG,
     WM_QUIT,
 };
-use windows_result::Error as WindowsError;
 
 use numpy::ndarray::{self, s};
 use numpy::PyArray3;
@@ -41,7 +41,7 @@ pub enum CaptureError {
     #[error("No frame available yet.")]
     NoFrameAvailable,
     #[error("Windows error during Capture.")]
-    WindowsError(#[from] WindowsError),
+    WindowsError(#[from] windows::core::Error),
     #[error("DirectX error during Capture.")]
     DirectXError(#[from] DirectXError),
     #[error("Frame could not be materialized.")]
@@ -158,7 +158,7 @@ impl Capture {
                 let context = d3d_device_context.clone();
                 let capture_frame = frame.clone();
 
-                let mut last_size = gc_item.Size()?;
+                let last_size = Cell::new(gc_item.Size()?);
                 let direct3d_device_recreate = SendDirectX::new(direct3d_device.clone());
 
                 move |frame, _| {
@@ -181,9 +181,7 @@ impl Capture {
                     unsafe { frame_texture.GetDesc(&mut desc) }
 
                     // Check if the size has been changed, and recreate the frame pool if necessary
-                    if frame_content_size.Width != last_size.Width
-                        || frame_content_size.Height != last_size.Height
-                    {
+                    if frame_content_size != last_size.get() {
                         let direct3d_device_recreate = &direct3d_device_recreate;
                         frame_pool.Recreate(
                             &direct3d_device_recreate.0,
@@ -191,7 +189,7 @@ impl Capture {
                             1,
                             frame_content_size,
                         )?;
-                        last_size = frame_content_size;
+                        last_size.set(frame_content_size);
                         return Ok(());
                     }
                     // Set width & height
@@ -214,7 +212,7 @@ impl Capture {
             let mut msg = MSG::default();
             unsafe {
                 while GetMessageW(&mut msg, None, 0, 0).as_bool() {
-                    TranslateMessage(&msg);
+                    let _ = TranslateMessage(&msg);
                     DispatchMessageW(&msg);
                 }
             }

@@ -1,5 +1,6 @@
 // This code has been adapted from https://github.com/NiiightmareXD/windows-capture
 
+use std::ffi::c_void;
 use std::mem;
 use std::num::ParseIntError;
 use std::string::FromUtf16Error;
@@ -9,10 +10,12 @@ use pyo3::prelude::*;
 
 use windows::core::{HSTRING, PCWSTR};
 use windows::Graphics::Capture::GraphicsCaptureItem;
-use windows::Win32::Foundation::{BOOL, LPARAM, POINT, RECT, TRUE};
+use windows::core::BOOL;
+use windows::Win32::Foundation::{LPARAM, POINT, RECT, TRUE};
 use windows::Win32::Graphics::Gdi::{
     EnumDisplayDevicesW, EnumDisplayMonitors, EnumDisplaySettingsW, GetMonitorInfoW,
-    MonitorFromPoint, DEVMODEW, DISPLAY_DEVICEW, ENUM_CURRENT_SETTINGS, HDC, HMONITOR, MONITORINFO,
+    MonitorFromPoint, DEVMODEW, DISPLAY_DEVICEW, DISPLAY_DEVICE_STATE_FLAGS, ENUM_CURRENT_SETTINGS,
+    HDC, HMONITOR, MONITORINFO,
     MONITORINFOEXW, MONITOR_DEFAULTTONULL,
 };
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
@@ -55,7 +58,7 @@ impl From<MonitorError> for PyErr {
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
 #[pyclass(from_py_object)]
 pub struct Monitor {
-    monitor_handle: HMONITOR,
+    monitor_handle: isize,
 }
 
 #[pymethods]
@@ -207,7 +210,7 @@ impl Monitor {
             cb: u32::try_from(mem::size_of::<DISPLAY_DEVICEW>()).unwrap(),
             DeviceName: [0; 32],
             DeviceString: [0; 128],
-            StateFlags: 0,
+            StateFlags: DISPLAY_DEVICE_STATE_FLAGS(0),
             DeviceID: [0; 128],
             DeviceKey: [0; 128],
         };
@@ -269,14 +272,14 @@ impl Monitor {
     ///
     /// * `monitor_handle` - The raw HMONITOR.
     #[must_use]
-    pub const fn from_handle(monitor_handle: HMONITOR) -> Self {
-        Self { monitor_handle }
+    pub fn from_handle(monitor_handle: HMONITOR) -> Self {
+        Self { monitor_handle: monitor_handle.0 as isize }
     }
 
     /// Returns the raw HMONITOR of the monitor.
     #[must_use]
-    pub const fn as_raw_hmonitor(&self) -> HMONITOR {
-        self.monitor_handle
+    pub fn as_raw_hmonitor(&self) -> HMONITOR {
+        HMONITOR(self.monitor_handle as *mut c_void)
     }
 }
 
@@ -293,7 +296,7 @@ pub fn primary_monitor() -> Result<Monitor, MonitorError> {
         return Err(MonitorError::NotFound);
     }
 
-    Ok(Monitor { monitor_handle })
+    Ok(Monitor::from_handle(monitor_handle))
 }
 
 // Callback Used For Enumerating All Monitors
@@ -305,7 +308,7 @@ unsafe extern "system" fn enum_monitors_callback(
 ) -> BOOL {
     let monitors = &mut *(vec.0 as *mut Vec<Monitor>);
 
-    monitors.push(Monitor { monitor_handle });
+    monitors.push(Monitor::from_handle(monitor_handle));
 
     TRUE
 }

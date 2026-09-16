@@ -2,6 +2,7 @@
 name = "pixel_forge"
 version = "0.1.1"
 edition = "2021"
+rust-version = "1.82"  # windows 0.62
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
@@ -15,30 +16,23 @@ thiserror = "2.0"
 
 # Windows (Windows Graphics Capture) backend
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.54.0", features = [
-    "Win32_System_WinRT_Graphics_Capture",
-    "Win32_Graphics_Direct3D11",
-    "Win32_Foundation",
-    "Graphics_Capture",
-    "Win32_System_WinRT_Direct3D11",
-    "Win32_System_Threading",
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_Graphics_Dxgi_Common",
-    "Win32_Graphics_Direct3D",
-    "Win32_Graphics_Gdi",
-    "System",
-    "Graphics_DirectX_Direct3D11",
-    "Foundation_Metadata",
-    "Win32_Devices_Display",
-    "Storage",
-    "Graphics_Imaging",
-    "Storage_Streams",
+windows = { version = "0.62", features = [
     "Foundation",
-    "Media_MediaProperties",
-    "Media_Core",
-    "Media_Transcoding",
+    "Graphics_Capture",
+    "Graphics_DirectX_Direct3D11",
+    "System",
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Threading",
+    "Win32_System_WinRT",
+    "Win32_System_WinRT_Direct3D11",
+    "Win32_System_WinRT_Graphics_Capture",
+    "Win32_UI_WindowsAndMessaging",
 ] }
-windows-result = "0.1.1"
+windows-future = "0.3"
 parking_lot = "0.12"
 
 # Linux (X11) backend
