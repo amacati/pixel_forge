@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "pixel_forge"
-version = "0.1.1"
+version = "0.2.0"
 description = "Ultra-fast screen capture in Rust with Python bindings"
 readme = "README.md"
 authors = [{ name = "Martin Schuck", email = "real.amacati@gmail.com" }]
@@ -48,7 +48,7 @@ exclude = ["docs"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "D", "TCH", "ANN"]
-ignore = ["ANN101", "ANN401"]
+ignore = ["ANN401"]
 fixable = ["ALL"]
 
 [tool.ruff.lint.isort]

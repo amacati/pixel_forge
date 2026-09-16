@@ -1,6 +1,6 @@
 [package]
 name = "pixel_forge"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.88"  # let chains
 
@@ -10,7 +10,7 @@ name = "pixel_forge"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.29"
+pyo3 = { version = "0.29", features = ["abi3-py310"] }
 numpy = "0.29"
 thiserror = "2.0"
 
