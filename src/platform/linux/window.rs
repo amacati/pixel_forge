@@ -25,7 +25,7 @@ fn client_list(conn: &RustConnection, root: u32) -> Result<Vec<u32>, X11Error> {
 }
 
 fn title(conn: &RustConnection, window: u32) -> Result<Option<String>, X11Error> {
-    let net_wm_name = intern(conn, b"_NET_WM_NAME")?;  // preferred property
+    let net_wm_name = intern(conn, b"_NET_WM_NAME")?; // preferred property
     let utf8 = intern(conn, b"UTF8_STRING")?;
     let reply = conn
         .get_property(false, window, net_wm_name, utf8, 0, u32::MAX)?
@@ -35,7 +35,14 @@ fn title(conn: &RustConnection, window: u32) -> Result<Option<String>, X11Error>
     }
     // Fallback to legacy WM_NAME if _NET_WM_NAME didn't work
     let reply = conn
-        .get_property(false, window, AtomEnum::WM_NAME, AtomEnum::STRING, 0, u32::MAX)?
+        .get_property(
+            false,
+            window,
+            AtomEnum::WM_NAME,
+            AtomEnum::STRING,
+            0,
+            u32::MAX,
+        )?
         .reply()?;
     if reply.value.is_empty() {
         return Ok(None);
@@ -106,7 +113,11 @@ pub fn foreground_window() -> Result<Window, X11Error> {
     let reply = conn
         .get_property(false, root, atom, AtomEnum::WINDOW, 0, 1)?
         .reply()?;
-    match reply.value32().and_then(|mut it| it.next()).filter(|&w| w != 0) {
+    match reply
+        .value32()
+        .and_then(|mut it| it.next())
+        .filter(|&w| w != 0)
+    {
         Some(window) => Ok(Window { window }),
         None => Err(X11Error::NoActiveWindow),
     }

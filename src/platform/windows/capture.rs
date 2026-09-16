@@ -10,16 +10,16 @@ use numpy::{PyArray3, PyArrayMethods};
 use super::super::destination;
 use parking_lot::{Condvar, Mutex};
 
-use windows::core::{IInspectable, Interface, Ref};
 use windows::Foundation::TypedEventHandler;
 use windows::Graphics::Capture::{
     Direct3D11CaptureFrame, Direct3D11CaptureFramePool, GraphicsCaptureItem, GraphicsCaptureSession,
 };
 use windows::Graphics::DirectX::DirectXPixelFormat;
 use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
-use windows::Win32::Graphics::Direct3D11::{ID3D11Texture2D, D3D11_TEXTURE2D_DESC};
+use windows::Win32::Graphics::Direct3D11::{D3D11_TEXTURE2D_DESC, ID3D11Texture2D};
 use windows::Win32::System::WinRT::Direct3D11::IDirect3DDxgiInterfaceAccess;
-use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
+use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize};
+use windows::core::{IInspectable, Interface, Ref};
 
 use super::direct_x::{create_d3d_device, create_direct3d_device};
 use super::frame::Readback;

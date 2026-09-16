@@ -31,14 +31,14 @@ pub(crate) fn destination<'py>(
 mod windows;
 #[cfg(target_os = "windows")]
 pub use windows::{
-    enumerate_monitors, enumerate_windows, foreground_window, primary_monitor, Capture, Monitor,
-    Window,
+    Capture, Monitor, Window, enumerate_monitors, enumerate_windows, foreground_window,
+    primary_monitor,
 };
 
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::{
-    enumerate_monitors, enumerate_windows, foreground_window, primary_monitor, Capture, Monitor,
-    Window,
+    Capture, Monitor, Window, enumerate_monitors, enumerate_windows, foreground_window,
+    primary_monitor,
 };

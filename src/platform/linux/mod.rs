@@ -9,5 +9,5 @@ mod monitor;
 mod window;
 
 pub use capture::Capture;
-pub use monitor::{enumerate_monitors, primary_monitor, Monitor};
-pub use window::{enumerate_windows, foreground_window, Window};
+pub use monitor::{Monitor, enumerate_monitors, primary_monitor};
+pub use window::{Window, enumerate_windows, foreground_window};

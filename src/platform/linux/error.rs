@@ -1,5 +1,5 @@
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::PyErr;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 
 /// Errors raised by the X11 backend.
 #[derive(thiserror::Error, Debug)]

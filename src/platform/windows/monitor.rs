@@ -6,16 +6,16 @@ use std::num::ParseIntError;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
-use windows::core::BOOL;
-use windows::core::{HSTRING, PCWSTR};
 use windows::Graphics::Capture::GraphicsCaptureItem;
 use windows::Win32::Foundation::{LPARAM, POINT, RECT, TRUE};
 use windows::Win32::Graphics::Gdi::{
-    EnumDisplayDevicesW, EnumDisplayMonitors, EnumDisplaySettingsW, GetMonitorInfoW,
-    MonitorFromPoint, DEVMODEW, DISPLAY_DEVICEW, ENUM_CURRENT_SETTINGS, HDC, HMONITOR, MONITORINFO,
-    MONITORINFOEXW, MONITOR_DEFAULTTONULL,
+    DEVMODEW, DISPLAY_DEVICEW, ENUM_CURRENT_SETTINGS, EnumDisplayDevicesW, EnumDisplayMonitors,
+    EnumDisplaySettingsW, GetMonitorInfoW, HDC, HMONITOR, MONITOR_DEFAULTTONULL, MONITORINFO,
+    MONITORINFOEXW, MonitorFromPoint,
 };
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
+use windows::core::BOOL;
+use windows::core::{HSTRING, PCWSTR};
 
 use super::window::from_wide;
 

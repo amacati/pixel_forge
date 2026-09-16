@@ -14,7 +14,7 @@ use x11rb::rust_connection::RustConnection;
 use super::super::destination;
 use super::error::X11Error;
 use super::monitor::Monitor;
-use super::window::{connect, Window};
+use super::window::{Window, connect};
 
 #[derive(FromPyObject)]
 pub enum CaptureTarget {

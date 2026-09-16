@@ -5,17 +5,17 @@ use std::ffi::c_void;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
-use windows::core::{BOOL, HSTRING};
 use windows::Graphics::Capture::GraphicsCaptureItem;
 use windows::Win32::Foundation::{HWND, LPARAM, RECT, TRUE};
-use windows::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONULL};
+use windows::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONULL, MonitorFromWindow};
 use windows::Win32::System::Threading::GetCurrentProcessId;
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumChildWindows, FindWindowW, GetClientRect, GetDesktopWindow, GetForegroundWindow,
-    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
-    IsWindowVisible, GWL_EXSTYLE, GWL_STYLE, WS_CHILD, WS_EX_TOOLWINDOW,
+    EnumChildWindows, FindWindowW, GWL_EXSTYLE, GWL_STYLE, GetClientRect, GetDesktopWindow,
+    GetForegroundWindow, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW,
+    GetWindowThreadProcessId, IsWindowVisible, WS_CHILD, WS_EX_TOOLWINDOW,
 };
+use windows::core::{BOOL, HSTRING};
 
 use super::monitor::Monitor;
 
