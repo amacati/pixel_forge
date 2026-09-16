@@ -1,7 +1,9 @@
 use pyo3::prelude::*;
 
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, MapState};
+use x11rb::protocol::xproto::{
+    AtomEnum, ConfigureWindowAux, ConnectionExt, InputFocus, MapState, StackMode,
+};
 use x11rb::rust_connection::RustConnection;
 
 use super::error::X11Error;
@@ -90,6 +92,25 @@ impl Window {
     fn name(&self) -> Result<String, X11Error> {
         let (conn, _) = connect()?;
         Ok(title(&conn, self.window)?.unwrap_or_default())
+    }
+
+    /// Raise the window and give it the input focus.
+    fn focus(&self) -> Result<(), X11Error> {
+        let (conn, _) = connect()?;
+        conn.configure_window(
+            self.window,
+            &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
+        )?;
+        conn.set_input_focus(InputFocus::PARENT, self.window, x11rb::CURRENT_TIME)?;
+        conn.flush()?;
+        Ok(())
+    }
+
+    /// :``bool``: True if the window currently holds the input focus, else False.
+    #[getter]
+    fn focused(&self) -> Result<bool, X11Error> {
+        let (conn, _) = connect()?;
+        Ok(conn.get_input_focus()?.reply()?.focus == self.window)
     }
 }
 

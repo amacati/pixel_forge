@@ -13,7 +13,7 @@ use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemIntero
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumChildWindows, FindWindowW, GWL_EXSTYLE, GWL_STYLE, GetClientRect, GetDesktopWindow,
     GetForegroundWindow, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW,
-    GetWindowThreadProcessId, IsWindowVisible, WS_CHILD, WS_EX_TOOLWINDOW,
+    GetWindowThreadProcessId, IsWindowVisible, SetForegroundWindow, WS_CHILD, WS_EX_TOOLWINDOW,
 };
 use windows::core::{BOOL, HSTRING};
 
@@ -109,6 +109,20 @@ impl Window {
             GetWindowTextW(handle, &mut name);
             from_wide(&name)
         }
+    }
+
+    /// Bring the window to the foreground and give it the input focus.
+    fn focus(&self) {
+        // SAFETY: `as_handle()` is a plain window handle. SetForegroundWindow only sets foreground
+        // state. Its result is not needed.
+        let _ = unsafe { SetForegroundWindow(self.as_handle()) };
+    }
+
+    /// :``bool``: True if the window currently holds the foreground focus, else False.
+    #[getter]
+    fn focused(&self) -> bool {
+        // SAFETY: GetForegroundWindow reads global state and returns a borrowed handle.
+        unsafe { GetForegroundWindow().0 as isize == self.window_handle }
     }
 }
 

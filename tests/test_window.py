@@ -1,3 +1,5 @@
+import time
+
 from pixel_forge import Window, enumerate_windows
 
 
@@ -12,3 +14,10 @@ def test_window_properties():
     window = enumerate_windows()[0]
     assert window.valid
     assert isinstance(window.name, str)
+
+
+def test_window_focus():
+    window = enumerate_windows()[0]
+    window.focus()
+    time.sleep(0.1)
+    assert window.focused

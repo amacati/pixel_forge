@@ -43,6 +43,13 @@ class Window:
     def name(self) -> str:
         """The window name."""
 
+    @property
+    def focused(self) -> bool:
+        """True if the window currently holds the input focus, else False."""
+
+    def focus(self) -> None:
+        """Bring the window to the foreground and give it the input focus."""
+
 def primary_monitor() -> Monitor:
     """Get the primary monitor.
 
